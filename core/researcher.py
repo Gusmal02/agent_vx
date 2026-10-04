@@ -30,7 +30,8 @@ ARXIV_API = "http://export.arxiv.org/api/query"
 PROBLEM_QUERIES = {
     "causal":    "causal inference backdoor adjustment invariant risk minimization",
     "continual": "continual learning catastrophic forgetting elastic weight consolidation",
-    "riemann":   "Riemann hypothesis zeta function zero distribution",
+    "riemann":   "Riemann hypothesis zeta function zero distribution critical line",
+    "pnp":       "P versus NP complexity SAT phase transition circuit lower bounds",
 }
 
 # Fallback si no hay oracle

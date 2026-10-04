@@ -566,7 +566,7 @@ _result = {{'breaks': abs(effect) < 0.05, 'condition': '{strategy}', 'score': ab
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="agente vX v0.4 — loop multi-agente con researcher, swarm y disruptor")
-    parser.add_argument("--problem",    choices=["causal","continual"], default="causal")
+    parser.add_argument("--problem",    choices=["causal","continual","riemann","pnp"], default="causal")
     parser.add_argument("--n-agents",   type=int,   default=4)
     parser.add_argument("--max-hours",  type=float, default=1.0)
     parser.add_argument("--quorum",     type=int,   default=None,
