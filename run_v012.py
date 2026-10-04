@@ -1480,7 +1480,8 @@ if __name__ == "__main__":
     api_key  = os.getenv("ANTHROPIC_API_KEY")
     deadline = time.time() + args.max_hours * 3600
 
-    session_id = datetime.now().strftime(f"v012_{args.problem}_%Y%m%d_%H%M")
+    _agent_suffix = f"_{args.agent_id}" if args.agent_id else ""
+    session_id = datetime.now().strftime(f"v012_{args.problem}_%Y%m%d_%H%M%S") + _agent_suffix
     Path("results").mkdir(exist_ok=True)
 
     print(f"\n{'='*70}")
