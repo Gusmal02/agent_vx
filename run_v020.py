@@ -164,8 +164,7 @@ class MultiAgentCoordinator:
             self._print_report(round_report)
             all_rounds.append(round_report)
 
-        final = all_rounds[-1]
-        final["all_rounds"] = all_rounds
+        final = {**all_rounds[-1], "all_rounds": all_rounds}
         self._save(final)
         return final
 
