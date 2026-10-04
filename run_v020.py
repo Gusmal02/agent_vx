@@ -181,7 +181,7 @@ class MultiAgentCoordinator:
         robust_cross    = []
         candidate_cross = []
         for pair, votes in cross_votes.items():
-            avg_r = sum(abs(v.get("r", 0)) for v in votes) / len(votes)
+            avg_r = sum(abs(v.get("correlation", v.get("r", 0))) for v in votes) / len(votes)
             entry = {
                 "action1":  pair[0],
                 "action2":  pair[1],

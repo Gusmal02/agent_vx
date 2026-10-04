@@ -437,8 +437,9 @@ class EpistemicStateManager:
                  agent_id: str | None = None):
         Path(state_dir).mkdir(exist_ok=True)
         suffix = f"_{agent_id}" if agent_id else ""
-        self.path    = Path(state_dir) / f"epistemic_state_{problem}{suffix}.json"
-        self.problem = problem
+        self.path     = Path(state_dir) / f"epistemic_state_{problem}{suffix}.json"
+        self.problem  = problem
+        self.agent_id = agent_id
 
     def load(self) -> dict | None:
         if not self.path.exists():
@@ -539,9 +540,15 @@ class EpistemicStateManager:
         for action, count in epi._survey_count.items():
             all_survey[action] = max(all_survey.get(action, 0), count)
 
+        # Anotar agent_id en cada hipótesis soportada para trazabilidad en merge
+        if self.agent_id:
+            for hyp in all_supported.values():
+                hyp.setdefault("agent_id", self.agent_id)
+
         state = {
             "problem":               self.problem,
             "version":               VERSION,
+            "agent_id":              self.agent_id,
             "last_updated":          datetime.now().isoformat(),
             "sessions":              base.get("sessions", 0) + 1,
             "supported_hypotheses":  all_supported,

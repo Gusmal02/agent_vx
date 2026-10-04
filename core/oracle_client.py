@@ -218,7 +218,7 @@ Responde SOLO en JSON con esta estructura:
   ]
 }}"""
 
-        return self._call(SONNET, prompt, label="propose_verify", max_tokens=1200)
+        return self._call(SONNET, prompt, label="propose_verify", max_tokens=2000)
 
     def cross_domain_insight(self,
                               riemann_hypotheses: list,
