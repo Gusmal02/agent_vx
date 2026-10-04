@@ -119,3 +119,32 @@
 ─────────────────────────────────────────────────────────────────
   [Worker a1] iniciando  seed=42
   [Worker a2] iniciando  seed=49
+  [Worker a3] iniciando  seed=56
+  [Worker a4] iniciando  seed=63
+  [Worker a5] iniciando  seed=70
+  [Worker a1] fin  ciclos=None  richness=None  t=9s
+  [Worker a2] fin  ciclos=None  richness=None  t=9s
+  [Worker a5] fin  ciclos=None  richness=None  t=9s
+  [Worker a4] fin  ciclos=None  richness=None  t=9s
+  [Worker a3] fin  ciclos=None  richness=None  t=9s
+  [Coordinator] advertencia: no encontré results/epistemic_state_riemann_a1.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_riemann_a2.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_riemann_a5.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_riemann_a4.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_riemann_a3.json
+
+  [Monitor] Robustos (0): []
+  [Monitor] Frontera (0): []
+  [Monitor] misiones → results/misiones_riemann_r4.json
+
+═════════════════════════════════════════════════════════════════
+  REPORTE MULTI-AGENTE — RIEMANN  v0.4.0
+─────────────────────────────────────────────────────────────────
+  Agentes: 5  |  Convergieron: 0/5  |  Ciclos: None–None (μ=None)
+  Tiempo total: 10s
+
+  HALLAZGOS ROBUSTOS (votos ≥ 3):
+    (ninguno alcanzó quórum)
+═════════════════════════════════════════════════════════════════
+
+[Guardado] → results/multiagente_riemann_20261004_1937.json

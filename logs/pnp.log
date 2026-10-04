@@ -181,3 +181,29 @@ Installed 59 packages in 281ms
   [Worker a3] iniciando  seed=56
   [Worker a4] iniciando  seed=63
   [Worker a5] iniciando  seed=70
+  [Worker a5] fin  ciclos=None  richness=None  t=8s
+  [Worker a2] fin  ciclos=None  richness=None  t=8s
+  [Worker a4] fin  ciclos=None  richness=None  t=8s
+  [Worker a1] fin  ciclos=None  richness=None  t=9s
+  [Worker a3] fin  ciclos=None  richness=None  t=10s
+  [Coordinator] advertencia: no encontré results/epistemic_state_pnp_a5.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_pnp_a2.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_pnp_a4.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_pnp_a1.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_pnp_a3.json
+
+  [Monitor] Robustos (0): []
+  [Monitor] Frontera (0): []
+  [Monitor] misiones → results/misiones_pnp_r4.json
+
+═════════════════════════════════════════════════════════════════
+  REPORTE MULTI-AGENTE — PNP  v0.4.0
+─────────────────────────────────────────────────────────────────
+  Agentes: 5  |  Convergieron: 0/5  |  Ciclos: None–None (μ=None)
+  Tiempo total: 10s
+
+  HALLAZGOS ROBUSTOS (votos ≥ 3):
+    (ninguno alcanzó quórum)
+═════════════════════════════════════════════════════════════════
+
+[Guardado] → results/multiagente_pnp_20261004_1937.json

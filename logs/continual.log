@@ -127,3 +127,24 @@
   [Worker a1] fin  ciclos=None  richness=None  t=3s
   [Worker a5] fin  ciclos=None  richness=None  t=3s
   [Worker a4] fin  ciclos=None  richness=None  t=3s
+  [Coordinator] advertencia: no encontré results/epistemic_state_continual_a3.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_continual_a2.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_continual_a1.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_continual_a5.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_continual_a4.json
+
+  [Monitor] Robustos (0): []
+  [Monitor] Frontera (0): []
+  [Monitor] misiones → results/misiones_continual_r4.json
+
+═════════════════════════════════════════════════════════════════
+  REPORTE MULTI-AGENTE — CONTINUAL  v0.4.0
+─────────────────────────────────────────────────────────────────
+  Agentes: 5  |  Convergieron: 0/5  |  Ciclos: None–None (μ=None)
+  Tiempo total: 3s
+
+  HALLAZGOS ROBUSTOS (votos ≥ 3):
+    (ninguno alcanzó quórum)
+═════════════════════════════════════════════════════════════════
+
+[Guardado] → results/multiagente_continual_20261004_1936.json
