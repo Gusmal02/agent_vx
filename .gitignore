@@ -11,7 +11,7 @@ __pycache__/
 # Resultados y datos generados (grandes, cambian cada run)
 results/
 results_*.json
-memory/
+# memory/ es código fuente — no ignorar
 checkpoints/
 library_*.pkl
 log_*.txt
