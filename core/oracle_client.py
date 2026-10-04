@@ -22,26 +22,43 @@ from typing import Optional
 
 SONNET = "claude-sonnet-4-6"
 OPUS   = "claude-opus-5-5"
+FABLE  = "claude-fable-5-1"
 
-# Límite de llamadas
-MAX_CALLS_PER_HOUR = 4
-CALL_WINDOW        = 3600   # segundos
-MAX_OPUS_TOTAL     = 2      # máximo 2 llamadas Opus por sesión (~$0.10 c/u)
+# Precios por MTok (in, out) en USD
+MODEL_PRICES = {
+    SONNET: (3.0,  15.0),
+    OPUS:   (15.0, 75.0),
+    FABLE:  (3.0,  15.0),   # aproximado hasta confirmar pricing
+}
+
+# Límites de llamadas — se ajustan según modelo primario
+_LIMITS_BY_MODEL = {
+    SONNET: {"per_hour": 6,  "opus_cap": 2},
+    OPUS:   {"per_hour": 10, "opus_cap": 999},  # sin cap cuando es el modelo principal
+    FABLE:  {"per_hour": 8,  "opus_cap": 2},
+}
+CALL_WINDOW = 3600
 
 
 class OracleClient:
     """
     Wrapper del API de Anthropic para consultas estratégicas.
     Se invoca solo cuando el agente está estancado o tiene hipótesis críticas.
+    primary_model: modelo base para llamadas regulares (sonnet/opus/fable).
     """
 
-    def __init__(self, api_key: str, budget_usd: float = 2.50):
-        self._api_key    = api_key
-        self._budget     = budget_usd
-        self._spent      = 0.0
+    def __init__(self, api_key: str, budget_usd: float = 2.50,
+                 primary_model: str = SONNET):
+        self._api_key       = api_key
+        self._budget        = budget_usd
+        self._spent         = 0.0
         self._call_log: list = []
-        self._client     = None
-        self._available  = False
+        self._client        = None
+        self._available     = False
+        self._primary_model = primary_model
+        _lim = _LIMITS_BY_MODEL.get(primary_model, _LIMITS_BY_MODEL[SONNET])
+        self._max_per_hour  = _lim["per_hour"]
+        self._opus_cap      = _lim["opus_cap"]
 
         if api_key and api_key != "PLACEHOLDER":
             try:
@@ -58,7 +75,9 @@ class OracleClient:
 
     # ── Rate limiting ─────────────────────────────────────────────────────────
 
-    def _can_call(self, model: str = SONNET) -> bool:
+    def _can_call(self, model: str | None = None) -> bool:
+        if model is None:
+            model = self._primary_model
         if not self._available:
             return False
         if self._spent >= self._budget:
@@ -66,22 +85,17 @@ class OracleClient:
             return False
         now = time.time()
         recent = [c for c in self._call_log if now - c["ts"] < CALL_WINDOW]
-        if len(recent) >= MAX_CALLS_PER_HOUR:
+        if len(recent) >= self._max_per_hour:
             return False
         if model == OPUS:
             opus_total = sum(1 for c in self._call_log if c["model"] == OPUS)
-            if opus_total >= MAX_OPUS_TOTAL:
-                print(f"  [Oracle] límite Opus alcanzado ({opus_total}/{MAX_OPUS_TOTAL})")
+            if opus_total >= self._opus_cap:
+                print(f"  [Oracle] límite Opus ({opus_total}/{self._opus_cap})")
                 return False
         return True
 
     def _record_call(self, model: str, in_tok: int, out_tok: int) -> float:
-        # Precios aproximados por MTok
-        prices = {
-            SONNET: (3.0, 15.0),
-            OPUS:   (15.0, 75.0),
-        }
-        p_in, p_out = prices.get(model, (3.0, 15.0))
+        p_in, p_out = MODEL_PRICES.get(model, (3.0, 15.0))
         cost = (in_tok / 1_000_000) * p_in + (out_tok / 1_000_000) * p_out
         self._spent += cost
         self._call_log.append({"ts": time.time(), "model": model, "cost": cost})
@@ -136,7 +150,7 @@ Responde SOLO en JSON con esta estructura exacta:
   "reasoning": "por qué esta dirección es prometedora"
 }}"""
 
-        return self._call(SONNET, prompt, label="suggest_direction")
+        return self._call(self._primary_model, prompt, label="suggest_direction")
 
     def verify_hypothesis(self,
                           hypothesis: str,
@@ -198,7 +212,7 @@ HIPÓTESIS SOPORTADAS (evidencia empírica robusta):
 
 Tu tarea: proponer UN SOLO experimento Python ejecutable que verifique o falsifique la hipótesis más fuerte.
 Restricciones del entorno:
-- Solo numpy disponible (NO scipy, NO sklearn, NO pandas)
+- Disponible: numpy (np), sympy (sp), scipy — NO pandas, NO archivos externos
 - El código debe terminar exactamente con: _result = {{"score": float, "confirms": bool}}
 - El experimento debe PODER FALLAR (hipótesis falsificable)
 - El código debe ser breve (menos de 20 líneas)
@@ -206,7 +220,7 @@ Restricciones del entorno:
 Responde SOLO en JSON, sin texto adicional:
 {{"experiments": [{{"hypothesis": "enunciado breve", "code": "import numpy as np\\n# código corto\\n_result = {{\\"score\\": 0.0, \\"confirms\\": True}}", "expected_if_true": "condición de confirmación"}}]}}"""
 
-        return self._call(SONNET, prompt, label="propose_verify", max_tokens=1500)
+        return self._call(self._primary_model, prompt, label="propose_verify", max_tokens=1500)
 
     def cross_domain_insight(self,
                               riemann_hypotheses: list,
@@ -240,7 +254,7 @@ Responde SOLO en JSON:
   "exploration_code": "código Python que explora la conexión, o null"
 }}"""
 
-        return self._call(SONNET, prompt, label="cross_domain")
+        return self._call(self._primary_model, prompt, label="cross_domain")
 
     # ── Llamada interna ───────────────────────────────────────────────────────
 
