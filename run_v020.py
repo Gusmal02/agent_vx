@@ -41,8 +41,8 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
         "--problem",   problem,
         "--max-hours", str(max_hours),
         "--seed",      str(seed),
-        "--cold-start",          # cada worker arranca frío
         "--agent-id",  agent_id,
+        # sin --cold-start: agent_id único garantiza estado propio; sí guarda al final
     ]
     print(f"  [Worker {agent_id}] iniciando  seed={seed}")
     t0 = time.time()
@@ -142,8 +142,11 @@ class MultiAgentCoordinator:
         Consolida N epistemic states por quórum.
         Hipótesis robusta = aparece en >= quorum agentes.
         """
+        _empty = {"robust_supported": {}, "candidate_supported": {},
+                  "robust_cross": [], "candidate_cross": [],
+                  "n_states_merged": 0, "quorum": self.quorum}
         if not states:
-            return {}
+            return _empty
 
         # ── Supported hypotheses ──────────────────────────────────────────
         hyp_votes: dict[str, list[dict]] = {}
