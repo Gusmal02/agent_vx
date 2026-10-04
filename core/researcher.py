@@ -171,11 +171,12 @@ Abstract: {paper['abstract'][:600]}
 
 Extrae {max_hyps} hipótesis CUANTITATIVAS testables.
 Requisitos del entorno de ejecución:
-- Solo numpy disponible (import numpy as np)
-- Código < 15 líneas
+- Disponible: numpy (np), sympy (sp), matplotlib (plt, backend Agg)
+- Código < 20 líneas
 - Debe terminar con: _result = {{"score": float, "confirms": bool, "metric": str}}
 - La hipótesis DEBE poder ser falsa (falsificable)
-- Usa datos sintéticos generados con numpy (no archivos externos)
+- Usa datos sintéticos o cómputo simbólico (no archivos externos)
+- Para guardar figuras: plt.savefig("/tmp/fig.png"); plt.close()
 
 Responde SOLO en JSON:
 {{"hypotheses": [

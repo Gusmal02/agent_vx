@@ -54,6 +54,8 @@ def _make_namespace() -> dict:
         ("math",                "math"),
         ("json",                "json"),
         ("collections",         "collections"),
+        ("sympy",               "sympy"),
+        ("sympy",               "sp"),
     ]:
         try:
             import importlib
@@ -61,6 +63,16 @@ def _make_namespace() -> dict:
             ns[alias] = mod
         except ImportError:
             pass
+
+    # Matplotlib con backend Agg para entornos sin pantalla
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as _plt
+        ns["matplotlib"] = matplotlib
+        ns["plt"] = _plt
+    except (ImportError, Exception):
+        pass
 
     return ns
 

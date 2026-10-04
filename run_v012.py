@@ -1739,6 +1739,26 @@ def _oracle_consolidate(oracle, tracker, memory, evidence_bank,
         return f"(error oracle: {e})"
 
 
+def _corpus_fallback_experiments(corpus_path: str | None) -> list[dict]:
+    """Fallback sin oracle: retorna hasta 2 experimentos ejecutables del corpus."""
+    if not corpus_path:
+        return []
+    try:
+        with open(corpus_path, encoding="utf-8") as f:
+            corpus = json.load(f)
+        exps = [e for e in corpus.get("experiments", []) if e.get("code")][:2]
+        return [
+            {
+                "hypothesis": e.get("hypothesis", e.get("id", "corpus experiment")),
+                "code":       e["code"],
+                "expected":   e.get("expected_if_true", "score > 0.5"),
+            }
+            for e in exps
+        ]
+    except Exception:
+        return []
+
+
 def _oracle_propose_experiments(oracle, tracker, memory, evidence_bank,
                                 cross_analyzer, problem: str, cycle: int,
                                 corpus_path: str | None = None) -> list[dict]:
@@ -1746,9 +1766,13 @@ def _oracle_propose_experiments(oracle, tracker, memory, evidence_bank,
     Pide al oracle un experimento específico y ejecutable.
     corpus_path: si existe, añade hipótesis del ResearcherAgent como contexto.
     Retorna lista de {"hypothesis": str, "code": str, "expected": str}.
+    Sin oracle: fallback a experimentos ejecutables del corpus.
     """
     if not oracle.available or oracle._spent >= oracle._budget - 0.20:
-        return []
+        fb = _corpus_fallback_experiments(corpus_path)
+        if fb:
+            print(f"  [VERIFY/fallback] oracle no disponible → {len(fb)} experimentos del corpus")
+        return fb
     supported_summary = "\n".join(
         f"  - {a}: score_mean={v['score_mean']:.3f}"
         for a, v in evidence_bank.supported.items()
