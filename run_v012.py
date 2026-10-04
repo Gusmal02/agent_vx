@@ -209,15 +209,23 @@ class EpistemicState:
             for a in self.actions
         )
 
-    def should_transition(self, n_supported: int) -> str | None:
+    def should_transition(self, n_supported: int,
+                          n_new: int = 0, has_prior: bool = False) -> str | None:
         if self.phase == PHASE_SURVEY:
             if self.all_surveyed():
                 if any(self.anomaly.values()) or n_supported >= 1:
                     return PHASE_FOCUS
         elif self.phase == PHASE_FOCUS:
             enough_focus = self._focus_cycles >= FOCUS_MIN_CYCLES_BEFORE_STOP
-            if n_supported >= SOLUTION_MIN_SUPPORTED and enough_focus:
-                return PHASE_CONSOLIDATE
+            if enough_focus:
+                if has_prior:
+                    # Con estado previo: exigir al menos 1 hallazgo nuevo
+                    # o haber agotado el máximo de ciclos
+                    if n_new >= 1 and n_supported >= SOLUTION_MIN_SUPPORTED:
+                        return PHASE_CONSOLIDATE
+                else:
+                    if n_supported >= SOLUTION_MIN_SUPPORTED:
+                        return PHASE_CONSOLIDATE
             if self._focus_cycles >= FOCUS_MAX_CYCLES:
                 return PHASE_CONSOLIDATE
         # CONSOLIDATE → VERIFY se maneja en el bucle principal
@@ -255,6 +263,7 @@ class EvidenceBank:
         self.supported:  dict[str, dict] = {}
         self.rejected:   dict[str, dict] = {}
         self._contradiction: tuple[str, str] | None = None
+        self._new_this_session: set[str] = set()  # hipótesis encontradas en esta sesión
 
     def record(self, action: str, score: float) -> None:
         buf = self._scores[action]
@@ -279,6 +288,7 @@ class EvidenceBank:
                     "evidence_cycles": SUPPORTED_EVIDENCE_WINDOW,
                     "window": [round(s, 4) for s in window],
                 }
+                self._new_this_session.add(action)
                 print(f"  [EvidenceBank] SUPPORTED: '{action}' "
                       f"mean={mean_s:.3f} var={var_s:.4f}")
 
@@ -303,6 +313,9 @@ class EvidenceBank:
 
     def n_supported(self) -> int:
         return len(self.supported)
+
+    def n_new_this_session(self) -> int:
+        return len(self._new_this_session)
 
     def richness(self) -> float:
         if not self.supported:
@@ -1515,11 +1528,13 @@ if __name__ == "__main__":
     if prior_state and not args.cold_start:
         n_prior = state_mgr.apply(prior_state, evidence_bank, cross_analyzer, epi)
         if evidence_bank.n_supported() >= SOLUTION_MIN_SUPPORTED:
-            # Ya tenemos suficientes hipótesis — saltamos SURVEY y arrancamos en FOCUS
+            # Ya tenemos suficientes hipótesis — saltamos SURVEY y arrancamos en FOCUS.
+            # _focus_cycles arranca en 0: el agente debe trabajar FOCUS_MIN_CYCLES_BEFORE_STOP
+            # ciclos buscando hallazgos NUEVOS antes de poder transicionar.
             epi.phase = PHASE_FOCUS
-            epi._focus_cycles = FOCUS_MIN_CYCLES_BEFORE_STOP  # permite transición rápida
+            epi._focus_cycles = 0
             print(f"[Estado previo] {n_prior} hipótesis restauradas — "
-                  f"saltando a FOCUS (ciclos_focus={epi._focus_cycles})")
+                  f"saltando a FOCUS (buscando hallazgos nuevos)")
         else:
             print(f"[Estado previo] {n_prior} hipótesis restauradas — "
                   f"continuando exploración normal")
@@ -1863,7 +1878,11 @@ if __name__ == "__main__":
                         print(f"  [ActionInventor] ✓ {invention['tool_name']}")
 
             # ── Transición de fase ────────────────────────────────────────────
-            new_phase = epi.should_transition(evidence_bank.n_supported())
+            new_phase = epi.should_transition(
+                evidence_bank.n_supported(),
+                n_new=evidence_bank.n_new_this_session(),
+                has_prior=prior_state is not None,
+            )
             if new_phase:
                 epi.enter_phase(new_phase)
                 if new_phase == PHASE_CONSOLIDATE:
