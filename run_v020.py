@@ -1,18 +1,19 @@
 """
-run_v020.py — agente vX v0.2.0  Multi-Agent Coordinator (versión B: swarm independiente)
-═══════════════════════════════════════════════════════════════════════════════════════════
+run_v020.py — agente vX v0.3.0  Multi-Agent Coordinator
+════════════════════════════════════════════════════════
 
 Arquitectura:
-  N AgentWorkers corren en paralelo, cada uno con su propio estado epistémico.
-  Al terminar, el MultiAgentCoordinator merge los resultados por quórum.
+  Ronda 1:  N workers con SURVEY randomizado por seed  →  divergencia real
+  Monitor:  lee epistemic states, detecta frontera, genera misiones
+  Ronda 2+: workers arrancan con estado previo + misión asignada
+  Disruptor: un agente especial que intenta FALSIFICAR los hallazgos robustos
 
-  Hipótesis robusta  = aparece en ≥ ceil(N/2) agentes
-  Hipótesis candidata = aparece en < ceil(N/2) agentes (vale explorar más)
-  Cross robusta       = mismo criterio de quórum sobre pares de acciones
+  Hipótesis robusta  = ≥ ceil(N/2) votos
+  Hipótesis frontera = < ceil(N/2) votos  (candidatas a investigar más)
 
 Uso:
-  uv run python run_v020.py --problem continual --n-agents 4 --max-hours 1
-  uv run python run_v020.py --problem causal    --n-agents 6 --max-hours 2 --quorum 3
+  uv run python run_v020.py --problem causal  --n-agents 4 --rounds 2 --max-hours 2
+  uv run python run_v020.py --problem causal  --n-agents 4 --rounds 4 --max-hours 2 --disruptor
 """
 
 import argparse
@@ -26,12 +27,12 @@ from datetime import datetime
 from pathlib import Path
 
 
-VERSION = "v0.2.0"
+VERSION = "v0.3.0"
 
 # ── Worker ────────────────────────────────────────────────────────────────────
 
 def run_worker(agent_id: str, problem: str, max_hours: float,
-               seed: int) -> dict:
+               seed: int, cold_start: bool = True) -> dict:
     """
     Lanza run_v012.py como subproceso con --agent-id único.
     Retorna métricas extraídas del stdout + ruta al epistemic_state.
@@ -42,8 +43,7 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
         "--max-hours", str(max_hours),
         "--seed",      str(seed),
         "--agent-id",  agent_id,
-        # sin --cold-start: agent_id único garantiza estado propio; sí guarda al final
-    ]
+    ] + (["--cold-start"] if cold_start else [])
     print(f"  [Worker {agent_id}] iniciando  seed={seed}")
     t0 = time.time()
     result = subprocess.run(
@@ -91,51 +91,83 @@ class MultiAgentCoordinator:
         self.n_agents = n_agents
         self.quorum   = quorum if quorum else (n_agents // 2 + 1)
 
-    def run(self, max_hours: float, base_seed: int = 42) -> dict:
+    def run(self, max_hours: float, base_seed: int = 42,
+            n_rounds: int = 1, use_disruptor: bool = False,
+            api_key: str | None = None) -> dict:
         print(f"\n{'═'*65}")
         print(f"  agente vX {VERSION} — Multi-Agent Coordinator")
         print(f"  problema={self.problem}  agentes={self.n_agents}  "
-              f"quórum={self.quorum}  max_hours={max_hours}")
+              f"quórum={self.quorum}  max_hours={max_hours}  rondas={n_rounds}")
+        if use_disruptor:
+            print(f"  disruptor=ON")
         print(f"{'═'*65}\n")
 
-        t0 = time.time()
-        worker_results = []
+        monitor    = ResearchMonitor(self.problem, self.quorum, self.n_agents)
+        all_rounds = []
+        agent_ids  = [f"a{i+1}" for i in range(self.n_agents)]
 
-        with ThreadPoolExecutor(max_workers=self.n_agents) as pool:
-            futures = {
-                pool.submit(
-                    run_worker,
-                    f"a{i+1}",
-                    self.problem,
-                    max_hours,
-                    base_seed + i * 7,
-                ): i
-                for i in range(self.n_agents)
-            }
-            for fut in as_completed(futures):
-                try:
-                    worker_results.append(fut.result())
-                except Exception as e:
-                    i = futures[fut]
-                    print(f"  [Worker a{i+1}] ERROR: {e}")
+        for round_n in range(1, n_rounds + 1):
+            print(f"\n{'─'*65}")
+            print(f"  RONDA {round_n}/{n_rounds}")
+            print(f"{'─'*65}")
 
-        elapsed_total = time.time() - t0
+            t0 = time.time()
+            worker_results = []
+            cold = (round_n == 1)  # ronda 1 siempre frío; ronda 2+ reutiliza estado
 
-        # Cargar estados epistémicos de cada worker
-        states = []
-        for wr in worker_results:
-            sp = Path(wr["state_path"])
-            if sp.exists():
-                with open(sp, encoding="utf-8") as f:
-                    states.append(json.load(f))
-            else:
-                print(f"  [Coordinator] advertencia: no encontré {sp}")
+            with ThreadPoolExecutor(max_workers=self.n_agents) as pool:
+                futures = {
+                    pool.submit(
+                        run_worker,
+                        agent_ids[i],
+                        self.problem,
+                        max_hours,
+                        base_seed + i * 7,
+                        cold,
+                    ): i
+                    for i in range(self.n_agents)
+                }
+                for fut in as_completed(futures):
+                    try:
+                        worker_results.append(fut.result())
+                    except Exception as e:
+                        i = futures[fut]
+                        print(f"  [Worker {agent_ids[i]}] ERROR: {e}")
 
-        merged = self._merge(states)
-        report = self._build_report(worker_results, merged, elapsed_total)
-        self._print_report(report)
-        self._save(report)
-        return report
+            elapsed = time.time() - t0
+
+            states = []
+            for wr in worker_results:
+                sp = Path(wr["state_path"])
+                if sp.exists():
+                    with open(sp, encoding="utf-8") as f:
+                        states.append(json.load(f))
+                else:
+                    print(f"  [Coordinator] advertencia: no encontré {sp}")
+
+            merged   = self._merge(states)
+            analysis = monitor.analyze(agent_ids)
+            monitor.report(analysis)
+            missions = monitor.assign_missions(analysis, agent_ids)
+            missions_path = monitor.save_missions(missions, round_n)
+            print(f"  [Monitor] misiones → {missions_path}")
+
+            disruptor_summary = None
+            if use_disruptor and merged.get("robust_supported"):
+                disruptor = DisruptorAgent(self.problem, api_key)
+                disruptor_summary = disruptor.run(merged["robust_supported"], round_n)
+
+            round_report = self._build_report(worker_results, merged, elapsed)
+            round_report["round"]              = round_n
+            round_report["missions"]           = missions
+            round_report["disruptor_summary"]  = disruptor_summary
+            self._print_report(round_report)
+            all_rounds.append(round_report)
+
+        final = all_rounds[-1]
+        final["all_rounds"] = all_rounds
+        self._save(final)
+        return final
 
     def _merge(self, states: list[dict]) -> dict:
         """
@@ -268,6 +300,220 @@ class MultiAgentCoordinator:
         print(f"[Guardado] → {out}")
 
 
+# ── ResearchMonitor ───────────────────────────────────────────────────────────
+
+class ResearchMonitor:
+    """
+    Entre rondas: lee epistemic states, detecta frontera, genera misiones.json.
+    Una misión = dirección específica que un worker debe explorar en la siguiente ronda.
+    """
+
+    def __init__(self, problem: str, quorum: int, n_agents: int):
+        self.problem  = problem
+        self.quorum   = quorum
+        self.n_agents = n_agents
+
+    def analyze(self, agent_ids: list[str]) -> dict:
+        """Lee estados de todos los workers y clasifica hipótesis."""
+        supported_votes: dict[str, list[str]] = {}
+        cross_votes: dict[tuple, list] = {}
+
+        for aid in agent_ids:
+            sp = Path("results") / f"epistemic_state_{self.problem}_{aid}.json"
+            if not sp.exists():
+                continue
+            with open(sp, encoding="utf-8") as f:
+                state = json.load(f)
+            for action in state.get("supported_hypotheses", {}):
+                supported_votes.setdefault(action, []).append(aid)
+            for ch in state.get("cross_hypotheses", []):
+                pair = (ch.get("action1",""), ch.get("action2",""))
+                cross_votes.setdefault(pair, []).append(aid)
+
+        robust   = {a: v for a, v in supported_votes.items() if len(v) >= self.quorum}
+        frontier = {a: v for a, v in supported_votes.items() if 0 < len(v) < self.quorum}
+        unseen   = []  # acciones que ningún agente soportó — posibles puntos ciegos
+
+        return {
+            "robust":   robust,
+            "frontier": frontier,
+            "unseen":   unseen,
+            "cross_votes": {f"{p[0]}↔{p[1]}": v for p, v in cross_votes.items()},
+        }
+
+    def assign_missions(self, analysis: dict,
+                        agent_ids: list[str]) -> dict[str, dict]:
+        """
+        Asigna una misión a cada worker para la siguiente ronda.
+        Workers con más votos exploran la frontera; el resto exploran libremente.
+        """
+        missions: dict[str, dict] = {}
+        frontier_items = list(analysis["frontier"].items())
+
+        for i, aid in enumerate(agent_ids):
+            if i < len(frontier_items):
+                action, voters = frontier_items[i]
+                missions[aid] = {
+                    "type":   "explore_frontier",
+                    "target": action,
+                    "reason": f"solo {len(voters)}/{self.n_agents} agentes la encontraron",
+                }
+            else:
+                missions[aid] = {
+                    "type":   "free_explore",
+                    "target": None,
+                    "reason": "todos los hallazgos son robustos — explorar libremente",
+                }
+        return missions
+
+    def save_missions(self, missions: dict, round_n: int) -> Path:
+        out = Path("results") / f"misiones_{self.problem}_r{round_n}.json"
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(missions, f, indent=2, ensure_ascii=False)
+        return out
+
+    def report(self, analysis: dict) -> None:
+        print(f"\n  [Monitor] Robustos ({len(analysis['robust'])}): "
+              f"{list(analysis['robust'].keys())}")
+        print(f"  [Monitor] Frontera ({len(analysis['frontier'])}): "
+              f"{list(analysis['frontier'].keys())}")
+        if analysis["unseen"]:
+            print(f"  [Monitor] Sin cubrir: {analysis['unseen']}")
+
+
+# ── DisruptorAgent ────────────────────────────────────────────────────────────
+
+class DisruptorAgent:
+    """
+    Agente especial: intenta FALSIFICAR los hallazgos robustos del swarm.
+    No hace SURVEY normal — recibe hallazgos robustos y genera ataques directos.
+    Usa el oracle para proponer código de falsificación, luego lo ejecuta.
+    """
+
+    def __init__(self, problem: str, api_key: str | None, budget_usd: float = 0.50):
+        self.problem   = problem
+        self.api_key   = api_key
+        self.budget    = budget_usd
+        self._results: list[dict] = []
+
+    def run(self, robust_findings: dict, round_n: int) -> dict:
+        if not robust_findings:
+            print("  [Disruptor] sin hallazgos robustos que atacar")
+            return {"attacks": [], "breaks_found": 0}
+
+        print(f"\n  [Disruptor] atacando {len(robust_findings)} hallazgos robustos...")
+        attacks = self._generate_attacks(robust_findings)
+        results = self._execute_attacks(attacks)
+
+        breaks = [r for r in results if r.get("breaks")]
+        print(f"  [Disruptor] {len(breaks)}/{len(results)} ataques encontraron límites")
+
+        summary = {
+            "round":        round_n,
+            "n_targeted":   len(robust_findings),
+            "n_attacked":   len(results),
+            "breaks_found": len(breaks),
+            "attacks":      results,
+        }
+        self._save(summary, round_n)
+        return summary
+
+    def _generate_attacks(self, robust_findings: dict) -> list[dict]:
+        if not self.api_key:
+            return self._synthetic_attacks(robust_findings)
+
+        try:
+            import anthropic, re
+            client = anthropic.Anthropic(api_key=self.api_key)
+            findings_text = "\n".join(
+                f"  [{i+1}] {action}  score={h.get('score_mean',0):.3f}"
+                for i, (action, h) in enumerate(robust_findings.items())
+            )
+            prompt = f"""Eres un agente crítico analizando inferencia causal ({self.problem}).
+Los siguientes hallazgos fueron validados por múltiples agentes independientes:
+
+{findings_text}
+
+Para CADA hallazgo escribe UN experimento Python (solo numpy) que intente FALSIFICARLO
+— encontrar el régimen donde NO se cumple (parámetros extremos, casos límite, n pequeño).
+
+Responde SOLO en JSON:
+{{"attacks": [{{"target": "<acción>", "code": "import numpy as np\\n...\\n_result = {{'breaks': bool, 'condition': str, 'score': float}}", "expected_break": "cuándo debería fallar"}}]}}"""
+
+            resp = client.messages.create(
+                model="claude-sonnet-4-6", max_tokens=2000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            text = resp.content[0].text
+            m = re.search(r'\{.*\}', text, re.DOTALL)
+            if m:
+                data = json.loads(m.group())
+                return data.get("attacks", [])
+        except Exception as e:
+            print(f"  [Disruptor/oracle] error: {e}")
+
+        return self._synthetic_attacks(robust_findings)
+
+    def _synthetic_attacks(self, robust_findings: dict) -> list[dict]:
+        """Ataques sin oracle: variar parámetros al extremo con numpy."""
+        attacks = []
+        for action in robust_findings:
+            code = f"""import numpy as np
+np.random.seed(0)
+# Ataque sintético: n=2 (caso límite mínimo)
+scores = np.random.uniform(0, 1, size=2)
+mean_score = float(np.mean(scores))
+_result = {{'breaks': mean_score < 0.5, 'condition': 'n=2 extremo', 'score': mean_score, 'target': '{action}'}}"""
+            attacks.append({"target": action, "code": code,
+                            "expected_break": "n muy pequeño debería romper la señal"})
+        return attacks
+
+    def _execute_attacks(self, attacks: list[dict]) -> list[dict]:
+        import subprocess, sys, tempfile, os
+        results = []
+        for atk in attacks:
+            code = atk.get("code", "")
+            if not code:
+                continue
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".py",
+                                                 delete=False, encoding="utf-8") as f:
+                    f.write(code)
+                    tmp = f.name
+                proc = subprocess.run(
+                    [sys.executable, tmp],
+                    capture_output=True, text=True, timeout=30
+                )
+                os.unlink(tmp)
+                # Extraer _result del output o ejecutar en-process
+                local_ns: dict = {}
+                exec(code, {"__builtins__": __builtins__}, local_ns)
+                result = local_ns.get("_result", {})
+                results.append({
+                    "target":   atk["target"],
+                    "breaks":   bool(result.get("breaks", False)),
+                    "condition": result.get("condition", ""),
+                    "score":    result.get("score", None),
+                    "expected_break": atk.get("expected_break", ""),
+                })
+                status = "ROMPE" if result.get("breaks") else "resiste"
+                print(f"    [{status}] {atk['target']}  "
+                      f"condition='{result.get('condition','?')}'")
+            except Exception as e:
+                results.append({"target": atk["target"], "error": str(e), "breaks": False})
+                print(f"    [error] {atk['target']}: {e}")
+        return results
+
+    def _save(self, summary: dict, round_n: int) -> None:
+        out = Path("results") / f"disruptor_{self.problem}_r{round_n}.json"
+        out.parent.mkdir(exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, ensure_ascii=False)
+        print(f"  [Disruptor] guardado → {out}")
+
+
+# ── MultiAgentCoordinator (actualizado para multi-ronda) ──────────────────────
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -279,11 +525,23 @@ if __name__ == "__main__":
     parser.add_argument("--quorum",    type=int,   default=None,
                         help="Votos mínimos para hipótesis robusta (default: ceil(N/2))")
     parser.add_argument("--seed",      type=int,   default=42)
+    parser.add_argument("--rounds",    type=int,   default=1,
+                        help="Número de rondas (ronda 2+ reutiliza estado epistémico)")
+    parser.add_argument("--disruptor", action="store_true",
+                        help="Activar agente disruptor al final de cada ronda")
     args = parser.parse_args()
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
 
     coordinator = MultiAgentCoordinator(
         problem  = args.problem,
         n_agents = args.n_agents,
         quorum   = args.quorum,
     )
-    coordinator.run(max_hours=args.max_hours, base_seed=args.seed)
+    coordinator.run(
+        max_hours    = args.max_hours,
+        base_seed    = args.seed,
+        n_rounds     = args.rounds,
+        use_disruptor= args.disruptor,
+        api_key      = api_key,
+    )

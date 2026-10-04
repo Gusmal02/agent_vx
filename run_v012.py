@@ -1529,7 +1529,9 @@ if __name__ == "__main__":
     print(f"  Tools: {list(all_tools)}\n")
 
     # ── Acciones + estado epistémico ────────────────────────────────────────
-    actions       = PROBLEM_ACTIONS[args.problem]
+    import random as _rnd
+    actions = list(PROBLEM_ACTIONS[args.problem])
+    _rnd.Random(args.seed).shuffle(actions)   # orden único por seed → diversidad en SURVEY
     epi           = EpistemicState(actions)
     evidence_bank = EvidenceBank(actions)
     cross_analyzer = CrossActionAnalyzer(actions)
