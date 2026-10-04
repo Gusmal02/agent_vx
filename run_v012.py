@@ -433,9 +433,11 @@ class EpistemicStateManager:
 
     MAX_KEY_METRIC_HISTORY = 30  # puntos máximos a guardar por acción
 
-    def __init__(self, problem: str, state_dir: str = "results"):
+    def __init__(self, problem: str, state_dir: str = "results",
+                 agent_id: str | None = None):
         Path(state_dir).mkdir(exist_ok=True)
-        self.path    = Path(state_dir) / f"epistemic_state_{problem}.json"
+        suffix = f"_{agent_id}" if agent_id else ""
+        self.path    = Path(state_dir) / f"epistemic_state_{problem}{suffix}.json"
         self.problem = problem
 
     def load(self) -> dict | None:
@@ -1471,6 +1473,8 @@ if __name__ == "__main__":
     parser.add_argument("--resume",     action="store_true")
     parser.add_argument("--cold-start", action="store_true",
                         help="Ignorar estado epistémico previo — inicio desde cero")
+    parser.add_argument("--agent-id",   type=str, default=None,
+                        help="ID único para runs paralelos (afecta nombre del epistemic_state)")
     args = parser.parse_args()
 
     api_key  = os.getenv("ANTHROPIC_API_KEY")
@@ -1523,7 +1527,7 @@ if __name__ == "__main__":
     cross_analyzer = CrossActionAnalyzer(actions)
 
     # ── Persistencia epistémica (v0.1.3) ────────────────────────────────────
-    state_mgr  = EpistemicStateManager(args.problem)
+    state_mgr  = EpistemicStateManager(args.problem, agent_id=args.agent_id)
     prior_state = state_mgr.load()
     if prior_state and not args.cold_start:
         n_prior = state_mgr.apply(prior_state, evidence_bank, cross_analyzer, epi)
