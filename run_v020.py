@@ -27,12 +27,13 @@ from datetime import datetime
 from pathlib import Path
 
 
-VERSION = "v0.3.0"
+VERSION = "v0.4.0"
 
 # ── Worker ────────────────────────────────────────────────────────────────────
 
 def run_worker(agent_id: str, problem: str, max_hours: float,
-               seed: int, cold_start: bool = True) -> dict:
+               seed: int, cold_start: bool = True,
+               corpus_path: str | None = None) -> dict:
     """
     Lanza run_v012.py como subproceso con --agent-id único.
     Retorna métricas extraídas del stdout + ruta al epistemic_state.
@@ -43,7 +44,8 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
         "--max-hours", str(max_hours),
         "--seed",      str(seed),
         "--agent-id",  agent_id,
-    ] + (["--cold-start"] if cold_start else [])
+    ] + (["--cold-start"] if cold_start else []) \
+      + (["--corpus-path", corpus_path] if corpus_path else [])
     print(f"  [Worker {agent_id}] iniciando  seed={seed}")
     t0 = time.time()
     result = subprocess.run(
@@ -93,6 +95,7 @@ class MultiAgentCoordinator:
 
     def run(self, max_hours: float, base_seed: int = 42,
             n_rounds: int = 1, use_disruptor: bool = False,
+            use_researcher: bool = False,
             api_key: str | None = None) -> dict:
         print(f"\n{'═'*65}")
         print(f"  agente vX {VERSION} — Multi-Agent Coordinator")
@@ -100,11 +103,22 @@ class MultiAgentCoordinator:
               f"quórum={self.quorum}  max_hours={max_hours}  rondas={n_rounds}")
         if use_disruptor:
             print(f"  disruptor=ON")
+        if use_researcher:
+            print(f"  researcher=ON")
         print(f"{'═'*65}\n")
 
-        monitor    = ResearchMonitor(self.problem, self.quorum, self.n_agents)
-        all_rounds = []
-        agent_ids  = [f"a{i+1}" for i in range(self.n_agents)]
+        monitor     = ResearchMonitor(self.problem, self.quorum, self.n_agents)
+        all_rounds  = []
+        agent_ids   = [f"a{i+1}" for i in range(self.n_agents)]
+        corpus_path: str | None = None
+
+        # ── Researcher: construye corpus antes de la primera ronda ────────────
+        if use_researcher:
+            from core.researcher import ResearcherAgent
+            researcher = ResearcherAgent(self.problem, api_key)
+            corpus = researcher.build_corpus(n_papers=5, max_hyps_per_paper=2)
+            _cp = Path("results") / f"corpus_{self.problem}.json"
+            corpus_path = str(_cp) if _cp.exists() else None
 
         for round_n in range(1, n_rounds + 1):
             print(f"\n{'─'*65}")
@@ -124,6 +138,7 @@ class MultiAgentCoordinator:
                         max_hours,
                         base_seed + i * 7,
                         cold,
+                        corpus_path,
                     ): i
                     for i in range(self.n_agents)
                 }
@@ -136,9 +151,16 @@ class MultiAgentCoordinator:
 
             elapsed = time.time() - t0
 
+            # Pequeña espera para que Windows flush los archivos a disco
+            time.sleep(2)
             states = []
             for wr in worker_results:
                 sp = Path(wr["state_path"])
+                # Reintentar hasta 3 veces por race condition de FS
+                for _ in range(3):
+                    if sp.exists():
+                        break
+                    time.sleep(1)
                 if sp.exists():
                     with open(sp, encoding="utf-8") as f:
                         states.append(json.load(f))
@@ -455,24 +477,42 @@ Responde SOLO en JSON sin texto extra:
             m = re.search(r'\{.*\}', text, re.DOTALL)
             if m:
                 data = json.loads(m.group())
-                return data.get("attacks", [])
+                attacks = data.get("attacks", [])
+                if attacks:
+                    return attacks
+                print(f"  [Disruptor/oracle] JSON ok pero attacks=[]. "
+                      f"Claves recibidas: {list(data.keys())}")
+            else:
+                print(f"  [Disruptor/oracle] respuesta sin JSON válido: {text[:120]}")
         except Exception as e:
             print(f"  [Disruptor/oracle] error: {e}")
 
         return self._synthetic_attacks(robust_findings)
 
     def _synthetic_attacks(self, robust_findings: dict) -> list[dict]:
-        """Ataques sin oracle: variar parámetros al extremo con numpy."""
+        """Ataques sin oracle: variar parámetros en regímenes extremos."""
         attacks = []
-        for action in robust_findings:
+        # Diferentes estrategias de ataque por índice
+        strategies = [
+            ("n=2 extremo",    2,   "n muy pequeño rompe señal"),
+            ("n=1000 grande",  1000,"señal se diluye con n grande"),
+            ("high_noise",     50,  "ruido dominante rompe correlación"),
+            ("uniform_prior",  20,  "prior uniforme cancela el efecto"),
+            ("low_variance",   30,  "varianza mínima colapsa la métrica"),
+        ]
+        for i, action in enumerate(robust_findings):
+            strategy, n, reason = strategies[i % len(strategies)]
+            seed_val = 100 + i * 17  # seed único por acción
             code = f"""import numpy as np
-np.random.seed(0)
-# Ataque sintético: n=2 (caso límite mínimo)
-scores = np.random.uniform(0, 1, size=2)
-mean_score = float(np.mean(scores))
-_result = {{'breaks': mean_score < 0.5, 'condition': 'n=2 extremo', 'score': mean_score, 'target': '{action}'}}"""
+np.random.seed({seed_val})
+# Ataque sintético: {strategy}
+n = {n}
+scores = np.random.uniform(0, 1, size=n)
+baseline = np.random.uniform(0, 1, size=n)
+effect = float(np.mean(scores) - np.mean(baseline))
+_result = {{'breaks': abs(effect) < 0.05, 'condition': '{strategy}', 'score': abs(effect), 'target': '{action}'}}"""
             attacks.append({"target": action, "code": code,
-                            "expected_break": "n muy pequeño debería romper la señal"})
+                            "expected_break": reason})
         return attacks
 
     def _execute_attacks(self, attacks: list[dict]) -> list[dict]:
@@ -525,17 +565,19 @@ _result = {{'breaks': mean_score < 0.5, 'condition': 'n=2 extremo', 'score': mea
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="agente vX v0.2 — loop multi-agente (swarm independiente + coordinator)")
-    parser.add_argument("--problem",   choices=["causal","continual"], default="causal")
-    parser.add_argument("--n-agents",  type=int,   default=4)
-    parser.add_argument("--max-hours", type=float, default=1.0)
-    parser.add_argument("--quorum",    type=int,   default=None,
+        description="agente vX v0.4 — loop multi-agente con researcher, swarm y disruptor")
+    parser.add_argument("--problem",    choices=["causal","continual"], default="causal")
+    parser.add_argument("--n-agents",   type=int,   default=4)
+    parser.add_argument("--max-hours",  type=float, default=1.0)
+    parser.add_argument("--quorum",     type=int,   default=None,
                         help="Votos mínimos para hipótesis robusta (default: ceil(N/2))")
-    parser.add_argument("--seed",      type=int,   default=42)
-    parser.add_argument("--rounds",    type=int,   default=1,
+    parser.add_argument("--seed",       type=int,   default=42)
+    parser.add_argument("--rounds",     type=int,   default=1,
                         help="Número de rondas (ronda 2+ reutiliza estado epistémico)")
-    parser.add_argument("--disruptor", action="store_true",
+    parser.add_argument("--disruptor",  action="store_true",
                         help="Activar agente disruptor al final de cada ronda")
+    parser.add_argument("--researcher", action="store_true",
+                        help="Activar ResearcherAgent: busca papers en arxiv antes del round 1")
     args = parser.parse_args()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -546,9 +588,10 @@ if __name__ == "__main__":
         quorum   = args.quorum,
     )
     coordinator.run(
-        max_hours    = args.max_hours,
-        base_seed    = args.seed,
-        n_rounds     = args.rounds,
-        use_disruptor= args.disruptor,
-        api_key      = api_key,
+        max_hours      = args.max_hours,
+        base_seed      = args.seed,
+        n_rounds       = args.rounds,
+        use_disruptor  = args.disruptor,
+        use_researcher = args.researcher,
+        api_key        = api_key,
     )

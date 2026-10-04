@@ -1322,9 +1322,11 @@ def _oracle_consolidate(oracle, tracker, memory, evidence_bank,
 
 
 def _oracle_propose_experiments(oracle, tracker, memory, evidence_bank,
-                                cross_analyzer, problem: str, cycle: int) -> list[dict]:
+                                cross_analyzer, problem: str, cycle: int,
+                                corpus_path: str | None = None) -> list[dict]:
     """
-    Pide al oracle 2 experimentos específicos y ejecutables.
+    Pide al oracle un experimento específico y ejecutable.
+    corpus_path: si existe, añade hipótesis del ResearcherAgent como contexto.
     Retorna lista de {"hypothesis": str, "code": str, "expected": str}.
     """
     if not oracle.available or oracle._spent >= oracle._budget - 0.20:
@@ -1338,8 +1340,23 @@ def _oracle_propose_experiments(oracle, tracker, memory, evidence_bank,
         cross_summary = "\nCorrelaciones cruzadas detectadas:\n" + "\n".join(
             f"  - {h['hypothesis']}" for h in cross_analyzer.cross_hypotheses[:3]
         )
+    # Contexto adicional del corpus del ResearcherAgent
+    corpus_context = ""
+    if corpus_path:
+        try:
+            with open(corpus_path, encoding="utf-8") as f:
+                corpus = json.load(f)
+            hyps = [e["hypothesis"] for e in corpus.get("experiments", [])
+                    if e.get("hypothesis")][:4]
+            if hyps:
+                corpus_context = "\nHipótesis de literatura académica (contexto):\n" + \
+                                 "\n".join(f"  - {h}" for h in hyps)
+        except Exception:
+            pass
     try:
-        result = oracle.propose_verify_experiments(problem, supported_summary, cross_summary)
+        result = oracle.propose_verify_experiments(
+            problem, supported_summary, cross_summary + corpus_context
+        )
         if not result:
             return []
         exps = result.get("experiments", [])
@@ -1480,8 +1497,10 @@ if __name__ == "__main__":
     parser.add_argument("--resume",     action="store_true")
     parser.add_argument("--cold-start", action="store_true",
                         help="Ignorar estado epistémico previo — inicio desde cero")
-    parser.add_argument("--agent-id",   type=str, default=None,
+    parser.add_argument("--agent-id",    type=str, default=None,
                         help="ID único para runs paralelos (afecta nombre del epistemic_state)")
+    parser.add_argument("--corpus-path", type=str, default=None,
+                        help="Ruta al corpus.json del ResearcherAgent (contexto adicional)")
     args = parser.parse_args()
 
     api_key  = os.getenv("ANTHROPIC_API_KEY")
@@ -1673,7 +1692,8 @@ if __name__ == "__main__":
                 print(f"\n  [CONSOLIDATE→VERIFY] Solicitando experimentos al oracle...")
                 _verify_experiments = _oracle_propose_experiments(
                     oracle, tracker, memory, evidence_bank,
-                    cross_analyzer, args.problem, global_cycle
+                    cross_analyzer, args.problem, global_cycle,
+                    corpus_path=args.corpus_path,
                 )
                 print(f"  [VERIFY] {len(_verify_experiments)} experimentos propuestos")
 
