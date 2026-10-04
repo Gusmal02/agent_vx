@@ -138,7 +138,7 @@ PHASE_VERIFY      = "VERIFY"
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 
-SURVEY_MIN_CYCLES_PER_ACTION = 3
+SURVEY_MIN_CYCLES_PER_ACTION = 2
 FOCUS_MAX_CYCLES             = 40
 SUPPORTED_THRESHOLD_SCORE    = 0.65
 SUPPORTED_EVIDENCE_WINDOW    = 5

@@ -212,7 +212,7 @@ HIPÓTESIS SOPORTADAS (evidencia empírica robusta):
 
 Tu tarea: proponer UN SOLO experimento Python ejecutable que verifique o falsifique la hipótesis más fuerte.
 Restricciones del entorno:
-- Disponible: numpy (np), sympy (sp), scipy — NO pandas, NO archivos externos
+- Disponible: numpy (np), sympy (sp) — NO scipy, NO pandas, NO archivos externos. Para correlaciones usa np.corrcoef; para regresión usa np.polyfit; para estadísticas usa numpy puro
 - El código debe terminar exactamente con: _result = {{"score": float, "confirms": bool}}
 - El experimento debe PODER FALLAR (hipótesis falsificable)
 - El código debe ser breve (menos de 20 líneas)
