@@ -1,0 +1,81 @@
+Downloading cpython-3.14.0rc2+freethreaded-linux-x86_64-gnu (download) (119.0MiB)
+ Downloading cpython-3.14.0rc2+freethreaded-linux-x86_64-gnu (download)
+Using CPython 3.14.0rc2
+Creating virtual environment at: .venv
+Downloading sympy (6.0MiB)
+Downloading anthropic (1.6MiB)
+Downloading nvidia-nvjitlink (40.5MiB)
+Downloading kiwisolver (1.5MiB)
+Downloading nvidia-nccl-cu13 (206.0MiB)
+Downloading nvidia-curand (56.8MiB)
+Downloading nvidia-cuda-cupti (10.2MiB)
+Downloading scipy (33.7MiB)
+Downloading fonttools (5.1MiB)
+Downloading nvidia-cudnn-cu13 (527.5MiB)
+Downloading nvidia-cublas (403.5MiB)
+Downloading nvidia-cusolver (191.6MiB)
+Downloading pydantic-core (2.0MiB)
+Downloading networkx (2.0MiB)
+Downloading nvidia-cufft (204.2MiB)
+Downloading triton (236.6MiB)
+Downloading nvidia-cusparse (139.2MiB)
+Downloading pillow (6.7MiB)
+Downloading torch (528.9MiB)
+Downloading numpy (16.0MiB)
+Downloading nvidia-cufile (1.2MiB)
+Downloading matplotlib (10.5MiB)
+Downloading nvidia-nvshmem-cu13 (57.6MiB)
+Downloading nvidia-cuda-runtime (2.1MiB)
+Downloading nvidia-cusparselt-cu13 (162.3MiB)
+Downloading nvidia-cuda-nvrtc (86.0MiB)
+Downloading cuda-bindings (6.5MiB)
+ Downloading nvidia-cufile
+ Downloading networkx
+ Downloading scipy
+ Downloading nvidia-nvjitlink
+ Downloading numpy
+ Downloading nvidia-cuda-cupti
+ Downloading pillow
+ Downloading nvidia-cuda-runtime
+ Downloading kiwisolver
+ Downloading pydantic-core
+ Downloading cuda-bindings
+ Downloading matplotlib
+ Downloading anthropic
+ Downloading fonttools
+ Downloading sympy
+ Downloading nvidia-nvshmem-cu13
+ Downloading nvidia-curand
+ Downloading nvidia-cuda-nvrtc
+ Downloading nvidia-cusparse
+ Downloading nvidia-cusparselt-cu13
+ Downloading nvidia-cusolver
+ Downloading nvidia-cufft
+ Downloading nvidia-nccl-cu13
+ Downloading triton
+ Downloading nvidia-cublas
+ Downloading torch
+ Downloading nvidia-cudnn-cu13
+Installed 59 packages in 281ms
+
+═════════════════════════════════════════════════════════════════
+  agente vX v0.4.0 — Multi-Agent Coordinator
+  problema=pnp  agentes=5  quórum=3  max_hours=6.0  rondas=4
+  researcher=ON
+═════════════════════════════════════════════════════════════════
+
+
+  [Researcher] ── Construyendo corpus: pnp ──
+  [Researcher] query: P versus NP complexity SAT phase transition circuit lower bounds
+  [Researcher] arxiv error: HTTP Error 403: Forbidden
+  [Researcher] 0 papers encontrados en arxiv
+  [Researcher] corpus listo → results/corpus_pnp.json  (0 hipótesis, 0 papers)
+
+─────────────────────────────────────────────────────────────────
+  RONDA 1/4
+─────────────────────────────────────────────────────────────────
+  [Worker a1] iniciando  seed=42
+  [Worker a2] iniciando  seed=49
+  [Worker a3] iniciando  seed=56
+  [Worker a4] iniciando  seed=63
+  [Worker a5] iniciando  seed=70
