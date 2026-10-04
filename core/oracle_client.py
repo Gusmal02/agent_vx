@@ -196,29 +196,17 @@ HIPÓTESIS SOPORTADAS (evidencia empírica robusta):
 
 {cross_summary}
 
-Tu tarea: proponer EXACTAMENTE 2 experimentos Python ejecutables que verifiquen o falsifiquen estas hipótesis.
+Tu tarea: proponer UN SOLO experimento Python ejecutable que verifique o falsifique la hipótesis más fuerte.
 Restricciones del entorno:
 - Solo numpy disponible (NO scipy, NO sklearn, NO pandas)
-- El código debe terminar con: _result = {{"score": float, "confirms": bool, ...}}
-- Cada experimento debe PODER FALLAR (hipótesis falsificable)
+- El código debe terminar exactamente con: _result = {{"score": float, "confirms": bool}}
+- El experimento debe PODER FALLAR (hipótesis falsificable)
+- El código debe ser breve (menos de 20 líneas)
 
-Responde SOLO en JSON con esta estructura:
-{{
-  "experiments": [
-    {{
-      "hypothesis": "enunciado falsificable breve",
-      "code": "import numpy as np\\n...\\n_result = {{...}}",
-      "expected_if_true": "qué valor o condición confirmaría la hipótesis"
-    }},
-    {{
-      "hypothesis": "...",
-      "code": "...",
-      "expected_if_true": "..."
-    }}
-  ]
-}}"""
+Responde SOLO en JSON, sin texto adicional:
+{{"experiments": [{{"hypothesis": "enunciado breve", "code": "import numpy as np\\n# código corto\\n_result = {{\\"score\\": 0.0, \\"confirms\\": True}}", "expected_if_true": "condición de confirmación"}}]}}"""
 
-        return self._call(SONNET, prompt, label="propose_verify", max_tokens=2000)
+        return self._call(SONNET, prompt, label="propose_verify", max_tokens=1500)
 
     def cross_domain_insight(self,
                               riemann_hypotheses: list,

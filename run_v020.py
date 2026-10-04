@@ -343,25 +343,34 @@ class ResearchMonitor:
     def assign_missions(self, analysis: dict,
                         agent_ids: list[str]) -> dict[str, dict]:
         """
-        Asigna una misión a cada worker para la siguiente ronda.
-        Workers con más votos exploran la frontera; el resto exploran libremente.
+        Prioridad de misiones:
+        1. Hipótesis soportadas en frontera (< quórum votos)
+        2. Correlaciones cruzadas candidatas (< quórum votos)
+        3. Exploración libre si todo es robusto
         """
         missions: dict[str, dict] = {}
-        frontier_items = list(analysis["frontier"].items())
+        frontier_items  = list(analysis["frontier"].items())
+        cross_candidates = [
+            (pair, votes) for pair, votes in analysis["cross_votes"].items()
+            if len(votes) < self.quorum
+        ]
+
+        task_pool = (
+            [("explore_frontier", a, f"solo {len(v)}/{self.n_agents} agentes la soportaron")
+             for a, v in frontier_items] +
+            [("explore_cross", pair, f"correlación candidata con {len(v)}/{self.n_agents} votos")
+             for pair, v in cross_candidates]
+        )
 
         for i, aid in enumerate(agent_ids):
-            if i < len(frontier_items):
-                action, voters = frontier_items[i]
-                missions[aid] = {
-                    "type":   "explore_frontier",
-                    "target": action,
-                    "reason": f"solo {len(voters)}/{self.n_agents} agentes la encontraron",
-                }
+            if i < len(task_pool):
+                kind, target, reason = task_pool[i]
+                missions[aid] = {"type": kind, "target": target, "reason": reason}
             else:
                 missions[aid] = {
                     "type":   "free_explore",
                     "target": None,
-                    "reason": "todos los hallazgos son robustos — explorar libremente",
+                    "reason": "todo robusto y sin candidatos — explorar libremente",
                 }
         return missions
 
@@ -428,16 +437,15 @@ class DisruptorAgent:
                 f"  [{i+1}] {action}  score={h.get('score_mean',0):.3f}"
                 for i, (action, h) in enumerate(robust_findings.items())
             )
-            prompt = f"""Eres un agente crítico analizando inferencia causal ({self.problem}).
-Los siguientes hallazgos fueron validados por múltiples agentes independientes:
-
+            # Atacar solo el hallazgo más fuerte para evitar truncación JSON
+            top = list(robust_findings.items())[0]
+            findings_text = f"  {top[0]}  score={top[1].get('score_mean',0):.3f}"
+            prompt = f"""Eres un agente crítico. Este hallazgo fue validado por múltiples agentes ({self.problem}):
 {findings_text}
 
-Para CADA hallazgo escribe UN experimento Python (solo numpy) que intente FALSIFICARLO
-— encontrar el régimen donde NO se cumple (parámetros extremos, casos límite, n pequeño).
-
-Responde SOLO en JSON:
-{{"attacks": [{{"target": "<acción>", "code": "import numpy as np\\n...\\n_result = {{'breaks': bool, 'condition': str, 'score': float}}", "expected_break": "cuándo debería fallar"}}]}}"""
+Escribe UN experimento Python (solo numpy, <15 líneas) que intente FALSIFICARLO en un caso límite extremo.
+Responde SOLO en JSON sin texto extra:
+{{"attacks": [{{"target": "{top[0]}", "code": "import numpy as np\\nnp.random.seed(99)\\n# ataque extremo\\n_result = {{\\"breaks\\": False, \\"condition\\": \\"caso extremo\\", \\"score\\": 0.0}}", "expected_break": "cuándo debería fallar"}}]}}"""
 
             resp = client.messages.create(
                 model="claude-sonnet-4-6", max_tokens=2000,
