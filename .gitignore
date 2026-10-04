@@ -33,3 +33,6 @@ lean_workspace/
 # Editor
 .vscode/
 .idea/
+
+# Logs de supervisord y swarms (generados en runtime)
+logs/*.log
