@@ -119,8 +119,8 @@ def test_race_condition_fix():
     path = Path("run_v020.py")
     code = path.read_text(encoding="utf-8")
 
-    has_sleep   = "time.sleep(2)" in code
-    has_retry   = "for _ in range(3)" in code
+    has_sleep   = "time.sleep(5)" in code or "time.sleep(2)" in code
+    has_retry   = "for attempt in range(10)" in code or "for _ in range(3)" in code
     has_corpus  = "corpus_path" in code
     has_version = 'VERSION = "v0.4.0"' in code
 

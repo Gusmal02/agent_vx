@@ -151,16 +151,18 @@ class MultiAgentCoordinator:
 
             elapsed = time.time() - t0
 
-            # Pequeña espera para que Windows flush los archivos a disco
-            time.sleep(2)
+            # Espera para que el FS flush los archivos (más lento en cloud/Linux)
+            time.sleep(5)
             states = []
             for wr in worker_results:
                 sp = Path(wr["state_path"])
-                # Reintentar hasta 3 veces por race condition de FS
-                for _ in range(3):
+                # Reintentar hasta 10 veces (10s extra) — cloud puede ser lento
+                for attempt in range(10):
                     if sp.exists():
                         break
                     time.sleep(1)
+                    if attempt == 4:
+                        print(f"  [Coordinator] esperando {sp} ({attempt+1}/10)...")
                 if sp.exists():
                     with open(sp, encoding="utf-8") as f:
                         states.append(json.load(f))
