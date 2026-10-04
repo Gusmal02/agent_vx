@@ -129,9 +129,34 @@ class MultiAgentCoordinator:
         print(f"{'═'*65}\n")
 
         monitor     = ResearchMonitor(self.problem, self.quorum, self.n_agents)
-        all_rounds  = []
         agent_ids   = [f"a{i+1}" for i in range(self.n_agents)]
         corpus_path: str | None = None
+
+        # ── Resiliencia: retomar run en curso si existe checkpoint ────────────
+        checkpoint_path = Path("results") / f"coordinator_checkpoint_{self.problem}.json"
+        all_rounds: list = []
+        resume_from_round = 1
+        if checkpoint_path.exists():
+            try:
+                with open(checkpoint_path, encoding="utf-8") as _f:
+                    _ckpt = json.load(_f)
+                all_rounds       = _ckpt.get("all_rounds", [])
+                resume_from_round = len(all_rounds) + 1
+                corpus_path_saved = _ckpt.get("corpus_path")
+                if corpus_path_saved and Path(corpus_path_saved).exists():
+                    corpus_path = corpus_path_saved
+                if resume_from_round <= n_rounds:
+                    print(f"  [Checkpoint] retomando desde ronda {resume_from_round}/{n_rounds} "
+                          f"({len(all_rounds)} rondas completadas)")
+                else:
+                    print(f"  [Checkpoint] run ya completado ({len(all_rounds)} rondas) — iniciando nuevo")
+                    all_rounds = []
+                    resume_from_round = 1
+                    checkpoint_path.unlink(missing_ok=True)
+            except Exception as _e:
+                print(f"  [Checkpoint] error leyendo checkpoint: {_e} — iniciando desde cero")
+                all_rounds = []
+                resume_from_round = 1
 
         # ── Researcher: construye corpus antes de la primera ronda ────────────
         if use_researcher:
@@ -155,14 +180,15 @@ class MultiAgentCoordinator:
             )
             meta_thread = meta_agent.start()
 
-        for round_n in range(1, n_rounds + 1):
+        for round_n in range(resume_from_round, n_rounds + 1):
             print(f"\n{'─'*65}")
             print(f"  RONDA {round_n}/{n_rounds}")
             print(f"{'─'*65}")
 
             t0 = time.time()
             worker_results = []
-            cold = (round_n == 1)  # ronda 1 siempre frío; ronda 2+ reutiliza estado
+            # Frío solo si es la primera ronda real del run (no hay estado guardado)
+            cold = (round_n == 1 and resume_from_round == 1)
 
             with ThreadPoolExecutor(max_workers=self.n_agents) as pool:
                 futures = {
@@ -224,6 +250,23 @@ class MultiAgentCoordinator:
             self._print_report(round_report)
             all_rounds.append(round_report)
 
+            # Guardar checkpoint del coordinator para poder retomar si muere
+            try:
+                checkpoint_path.parent.mkdir(exist_ok=True)
+                with open(checkpoint_path, "w", encoding="utf-8") as _f:
+                    json.dump({
+                        "problem":      self.problem,
+                        "n_agents":     self.n_agents,
+                        "n_rounds":     n_rounds,
+                        "completed":    round_n,
+                        "corpus_path":  corpus_path,
+                        "all_rounds":   all_rounds,
+                        "saved_at":     datetime.utcnow().isoformat(),
+                    }, _f, ensure_ascii=False, indent=2)
+                print(f"  [Checkpoint] ronda {round_n} guardada → {checkpoint_path}")
+            except Exception as _e:
+                print(f"  [Checkpoint] error guardando: {_e}")
+
         # ── Detener MetaMonitor y registrar su resumen ────────────────────────
         if meta_agent:
             meta_agent.stop()
@@ -235,6 +278,11 @@ class MultiAgentCoordinator:
         if meta_agent:
             final["meta_monitor"] = meta_agent.summary()
         self._save(final)
+
+        # Run completado — borrar checkpoint para que el próximo arranque sea limpio
+        checkpoint_path.unlink(missing_ok=True)
+        print(f"  [Checkpoint] run completado — checkpoint eliminado")
+
         return final
 
     def _merge(self, states: list[dict]) -> dict:
