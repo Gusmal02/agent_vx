@@ -1,0 +1,35 @@
+# Entorno
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Secretos
+.env
+
+# Resultados y datos generados (grandes, cambian cada run)
+results/
+results_*.json
+memory/
+checkpoints/
+library_*.pkl
+log_*.txt
+plots/
+
+# Archivos de bloqueo y build
+uv.lock
+*.egg-info/
+dist/
+build/
+
+# Bases de datos generadas
+*.sqlite
+*.db
+
+# Lean
+lean_workspace/
+
+# Editor
+.vscode/
+.idea/
