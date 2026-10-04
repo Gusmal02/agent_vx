@@ -50,14 +50,27 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
       + (["--oracle-model", oracle_model] if oracle_model else [])
     print(f"  [Worker {agent_id}] iniciando  seed={seed}")
     t0 = time.time()
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        cwd=Path(__file__).parent,
-    )
+    # Fix: timeout explícito para que el coordinator nunca se bloquee para siempre.
+    # Fix: output a archivo en lugar de capture_output para visibilidad en tiempo real
+    #      y para evitar que el pipe llene el buffer en runs largos.
+    worker_timeout = max_hours * 3600 + 300   # max_hours + 5 min de gracia
+    log_path = Path(__file__).parent / "results" / f"worker_{problem}_{agent_id}.log"
+    log_path.parent.mkdir(exist_ok=True)
+    try:
+        with open(log_path, "w") as log_fh:
+            result = subprocess.run(
+                cmd,
+                stdout=log_fh,
+                stderr=log_fh,
+                text=True,
+                cwd=Path(__file__).parent,
+                timeout=worker_timeout,
+            )
+    except subprocess.TimeoutExpired:
+        print(f"  [Worker {agent_id}] TIMEOUT tras {worker_timeout:.0f}s")
+        result = None
     elapsed = time.time() - t0
-    out = result.stdout + result.stderr
+    out = log_path.read_text() if log_path.exists() else ""
 
     def _ex(pattern):
         import re

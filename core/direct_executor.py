@@ -20,6 +20,18 @@ import traceback
 from queue import Queue, Empty
 from typing import Any, Optional
 
+# Fix: importar matplotlib una sola vez a nivel de módulo, no en cada llamada.
+# En Linux headless, importar pyplot en múltiples threads simultáneos puede
+# colgar el proceso al intentar inicializar fontcache o tocar locks del sistema.
+_matplotlib = None
+_plt = None
+try:
+    import matplotlib as _matplotlib
+    _matplotlib.use("Agg")
+    import matplotlib.pyplot as _plt
+except (ImportError, Exception):
+    pass
+
 
 def _make_namespace() -> dict:
     """
@@ -64,15 +76,11 @@ def _make_namespace() -> dict:
         except ImportError:
             pass
 
-    # Matplotlib con backend Agg para entornos sin pantalla
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as _plt
-        ns["matplotlib"] = matplotlib
+    # Reusar el import de nivel de módulo — ya inicializado una sola vez
+    if _matplotlib is not None:
+        ns["matplotlib"] = _matplotlib
+    if _plt is not None:
         ns["plt"] = _plt
-    except (ImportError, Exception):
-        pass
 
     return ns
 
