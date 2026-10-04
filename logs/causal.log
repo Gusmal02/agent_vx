@@ -20,3 +20,80 @@
   [Worker a3] iniciando  seed=56
   [Worker a4] iniciando  seed=63
   [Worker a5] iniciando  seed=70
+  [Worker a5] fin  ciclos=None  richness=None  t=31s
+  [Worker a3] fin  ciclos=None  richness=None  t=33s
+  [Worker a4] fin  ciclos=None  richness=None  t=32s
+  [Worker a1] fin  ciclos=None  richness=None  t=33s
+  [Worker a2] fin  ciclos=None  richness=None  t=33s
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a5.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a3.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a4.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a1.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a2.json
+
+  [Monitor] Robustos (0): []
+  [Monitor] Frontera (0): []
+  [Monitor] misiones → results/misiones_causal_r1.json
+
+═════════════════════════════════════════════════════════════════
+  REPORTE MULTI-AGENTE — CAUSAL  v0.4.0
+─────────────────────────────────────────────────────────────────
+  Agentes: 5  |  Convergieron: 0/5  |  Ciclos: None–None (μ=None)
+  Tiempo total: 33s
+
+  HALLAZGOS ROBUSTOS (votos ≥ 3):
+    (ninguno alcanzó quórum)
+═════════════════════════════════════════════════════════════════
+
+
+─────────────────────────────────────────────────────────────────
+  RONDA 2/4
+─────────────────────────────────────────────────────────────────
+  [Worker a1] iniciando  seed=42
+  [Worker a2] iniciando  seed=49
+  [Worker a3] iniciando  seed=56
+  [Worker a4] iniciando  seed=63
+  [Worker a5] iniciando  seed=70
+  [Worker a1] fin  ciclos=None  richness=None  t=17s
+  [Worker a2] fin  ciclos=None  richness=None  t=17s
+  [Worker a3] fin  ciclos=None  richness=None  t=19s
+  [Worker a5] fin  ciclos=None  richness=None  t=19s
+  [Worker a4] fin  ciclos=None  richness=None  t=19s
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a1.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a2.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a3.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a5.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a4.json
+
+  [Monitor] Robustos (0): []
+  [Monitor] Frontera (0): []
+  [Monitor] misiones → results/misiones_causal_r2.json
+
+═════════════════════════════════════════════════════════════════
+  REPORTE MULTI-AGENTE — CAUSAL  v0.4.0
+─────────────────────────────────────────────────────────────────
+  Agentes: 5  |  Convergieron: 0/5  |  Ciclos: None–None (μ=None)
+  Tiempo total: 20s
+
+  HALLAZGOS ROBUSTOS (votos ≥ 3):
+    (ninguno alcanzó quórum)
+═════════════════════════════════════════════════════════════════
+
+
+─────────────────────────────────────────────────────────────────
+  RONDA 3/4
+─────────────────────────────────────────────────────────────────
+  [Worker a1] iniciando  seed=42
+  [Worker a2] iniciando  seed=49
+  [Worker a3] iniciando  seed=56
+  [Worker a4] iniciando  seed=63
+  [Worker a5] iniciando  seed=70
+  [Worker a1] fin  ciclos=None  richness=None  t=15s
+  [Worker a4] fin  ciclos=None  richness=None  t=15s
+  [Worker a5] fin  ciclos=None  richness=None  t=15s
+  [Worker a2] fin  ciclos=None  richness=None  t=16s
+  [Worker a3] fin  ciclos=None  richness=None  t=16s
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a1.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a4.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a5.json
+  [Coordinator] advertencia: no encontré results/epistemic_state_causal_a2.json
