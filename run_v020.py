@@ -27,13 +27,14 @@ from datetime import datetime
 from pathlib import Path
 
 
-VERSION = "v0.4.0"
+VERSION = "v0.5.0"
 
 # ── Worker ────────────────────────────────────────────────────────────────────
 
 def run_worker(agent_id: str, problem: str, max_hours: float,
                seed: int, cold_start: bool = True,
-               corpus_path: str | None = None) -> dict:
+               corpus_path: str | None = None,
+               oracle_model: str | None = None) -> dict:
     """
     Lanza run_v012.py como subproceso con --agent-id único.
     Retorna métricas extraídas del stdout + ruta al epistemic_state.
@@ -45,7 +46,8 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
         "--seed",      str(seed),
         "--agent-id",  agent_id,
     ] + (["--cold-start"] if cold_start else []) \
-      + (["--corpus-path", corpus_path] if corpus_path else [])
+      + (["--corpus-path", corpus_path] if corpus_path else []) \
+      + (["--oracle-model", oracle_model] if oracle_model else [])
     print(f"  [Worker {agent_id}] iniciando  seed={seed}")
     t0 = time.time()
     result = subprocess.run(
@@ -96,15 +98,21 @@ class MultiAgentCoordinator:
     def run(self, max_hours: float, base_seed: int = 42,
             n_rounds: int = 1, use_disruptor: bool = False,
             use_researcher: bool = False,
+            use_meta_monitor: bool = False,
+            oracle_model: str | None = None,
             api_key: str | None = None) -> dict:
         print(f"\n{'═'*65}")
         print(f"  agente vX {VERSION} — Multi-Agent Coordinator")
         print(f"  problema={self.problem}  agentes={self.n_agents}  "
               f"quórum={self.quorum}  max_hours={max_hours}  rondas={n_rounds}")
+        if oracle_model:
+            print(f"  oracle_model={oracle_model}")
         if use_disruptor:
             print(f"  disruptor=ON")
         if use_researcher:
             print(f"  researcher=ON")
+        if use_meta_monitor:
+            print(f"  meta_monitor=ON")
         print(f"{'═'*65}\n")
 
         monitor     = ResearchMonitor(self.problem, self.quorum, self.n_agents)
@@ -119,6 +127,20 @@ class MultiAgentCoordinator:
             corpus = researcher.build_corpus(n_papers=5, max_hyps_per_paper=2)
             _cp = Path("results") / f"corpus_{self.problem}.json"
             corpus_path = str(_cp) if _cp.exists() else None
+
+        # ── MetaMonitor: background thread observador ─────────────────────────
+        meta_thread = None
+        meta_agent  = None
+        if use_meta_monitor and api_key:
+            from core.meta_monitor import MetaMonitorAgent
+            meta_agent = MetaMonitorAgent(
+                problems     = [self.problem],
+                api_key      = api_key,
+                model        = oracle_model or "claude-sonnet-4-6",
+                budget_usd   = 1.0,
+                interval_min = max(10.0, max_hours * 60 / 4),  # 4 síntesis por corrida
+            )
+            meta_thread = meta_agent.start()
 
         for round_n in range(1, n_rounds + 1):
             print(f"\n{'─'*65}")
@@ -139,6 +161,7 @@ class MultiAgentCoordinator:
                         base_seed + i * 7,
                         cold,
                         corpus_path,
+                        oracle_model,
                     ): i
                     for i in range(self.n_agents)
                 }
@@ -188,7 +211,16 @@ class MultiAgentCoordinator:
             self._print_report(round_report)
             all_rounds.append(round_report)
 
+        # ── Detener MetaMonitor y registrar su resumen ────────────────────────
+        if meta_agent:
+            meta_agent.stop()
+            ms = meta_agent.summary()
+            print(f"  [MetaMonitor] síntesis finales={ms['calls']}  "
+                  f"gastado=${ms['spent_usd']:.3f}")
+
         final = {**all_rounds[-1], "all_rounds": all_rounds}
+        if meta_agent:
+            final["meta_monitor"] = meta_agent.summary()
         self._save(final)
         return final
 
@@ -576,11 +608,26 @@ if __name__ == "__main__":
     parser.add_argument("--seed",       type=int,   default=42)
     parser.add_argument("--rounds",     type=int,   default=1,
                         help="Número de rondas (ronda 2+ reutiliza estado epistémico)")
-    parser.add_argument("--disruptor",  action="store_true",
+    parser.add_argument("--disruptor",    action="store_true",
                         help="Activar agente disruptor al final de cada ronda")
-    parser.add_argument("--researcher", action="store_true",
+    parser.add_argument("--researcher",   action="store_true",
                         help="Activar ResearcherAgent: busca papers en arxiv antes del round 1")
+    parser.add_argument("--meta-monitor", action="store_true",
+                        help="Activar MetaMonitorAgent: síntesis LLM cross-problema cada N min")
+    parser.add_argument("--oracle-model",
+                        choices=["sonnet", "opus", "fable",
+                                 "claude-sonnet-4-6", "claude-opus-5-5", "claude-fable-5-1"],
+                        default=None,
+                        help="Modelo del oracle (default: claude-sonnet-4-6)")
     args = parser.parse_args()
+
+    # Normalizar nombre de modelo
+    _model_map = {
+        "sonnet": "claude-sonnet-4-6",
+        "opus":   "claude-opus-5-5",
+        "fable":  "claude-fable-5-1",
+    }
+    oracle_model = _model_map.get(args.oracle_model, args.oracle_model)
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
 
@@ -590,10 +637,12 @@ if __name__ == "__main__":
         quorum   = args.quorum,
     )
     coordinator.run(
-        max_hours      = args.max_hours,
-        base_seed      = args.seed,
-        n_rounds       = args.rounds,
-        use_disruptor  = args.disruptor,
-        use_researcher = args.researcher,
-        api_key        = api_key,
+        max_hours        = args.max_hours,
+        base_seed        = args.seed,
+        n_rounds         = args.rounds,
+        use_disruptor    = args.disruptor,
+        use_researcher   = args.researcher,
+        use_meta_monitor = args.meta_monitor,
+        oracle_model     = oracle_model,
+        api_key          = api_key,
     )

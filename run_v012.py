@@ -1795,9 +1795,12 @@ def _oracle_propose_experiments(oracle, tracker, memory, evidence_bank,
                                  "\n".join(f"  - {h}" for h in hyps)
         except Exception:
             pass
+    # Guidance del MetaMonitor (si existe)
+    from core.meta_monitor import MetaMonitorAgent
+    meta_guidance = MetaMonitorAgent.read_guidance(problem)
     try:
         result = oracle.propose_verify_experiments(
-            problem, supported_summary, cross_summary + corpus_context
+            problem, supported_summary, cross_summary + corpus_context + meta_guidance
         )
         if not result:
             return []
@@ -1941,8 +1944,10 @@ if __name__ == "__main__":
                         help="Ignorar estado epistémico previo — inicio desde cero")
     parser.add_argument("--agent-id",    type=str, default=None,
                         help="ID único para runs paralelos (afecta nombre del epistemic_state)")
-    parser.add_argument("--corpus-path", type=str, default=None,
+    parser.add_argument("--corpus-path",  type=str, default=None,
                         help="Ruta al corpus.json del ResearcherAgent (contexto adicional)")
+    parser.add_argument("--oracle-model", type=str, default=None,
+                        help="Modelo del oracle (claude-sonnet-4-6 / claude-opus-5-5 / claude-fable-5-1)")
     args = parser.parse_args()
 
     api_key  = os.getenv("ANTHROPIC_API_KEY")
@@ -1962,7 +1967,11 @@ if __name__ == "__main__":
     executor     = DirectExecutor(timeout_sec=60.0)
     sub_executor = DirectExecutor(timeout_sec=50.0)
 
-    oracle  = OracleClient(api_key, budget_usd=ORACLE_BUDGET)
+    _oracle_model = args.oracle_model or "claude-sonnet-4-6"
+    # Opus budget más pequeño por costo (5× más caro que Sonnet)
+    _oracle_budget = 1.50 if "opus" in _oracle_model else ORACLE_BUDGET
+    oracle  = OracleClient(api_key, budget_usd=_oracle_budget,
+                           primary_model=_oracle_model)
     pool    = SubagentPool(sub_executor, max_workers=3)
     tracker = HypothesisTracker(subagent_pool=pool, oracle_client=oracle,
                                 sandbox=executor)
