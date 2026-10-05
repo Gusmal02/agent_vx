@@ -34,6 +34,10 @@ from core.blackboard    import Blackboard
 from core.math_explorer import MathExplorer, ExplorationTarget
 from core.math_tools    import (winding_number, isolate_zeros, verify_zero,
                                  scan_strip, zero_density, analyze_spacing)
+from core.pnp_explorer  import PNPExplorer, PNPTarget
+from core.pnp_tools     import (sat_hardness, phase_transition_scan,
+                                 resolution_complexity, circuit_lower_bound,
+                                 analyze_hardness_growth)
 
 VERSION = "v0.6.0"
 
@@ -286,6 +290,164 @@ class AgentV013:
         return state
 
 
+# ── Agente P vs NP ────────────────────────────────────────────────────────────
+
+class AgentPNP:
+    """
+    Agente autónomo para P vs NP.
+    Usa herramientas computacionales (SAT, resolución, circuitos).
+    Oracle solo responde preguntas conceptuales sobre complejidad.
+    """
+
+    def __init__(self, agent_id: str, seed: int,
+                 api_key: str | None, corpus_context: str | None = None):
+        self.agent_id   = agent_id
+        self.seed       = seed
+        self.blackboard = Blackboard(agent_id, "pnp")
+        self.explorer   = PNPExplorer(rng_seed=seed)
+        self.oracle     = Oracle(api_key)
+        self._corpus_context = corpus_context
+        self._cycles    = 0
+        self._t_start   = 0.0
+        # Recolectar resultados de hardness para análisis de crecimiento
+        self._hardness_results: list[dict] = []
+
+    def run(self, max_hours: float) -> dict:
+        self._t_start = time.time()
+        max_secs = max_hours * 3600
+        print(f"  [Agente {self.agent_id}] iniciando  seed={self.seed}  problema=pnp",
+              flush=True)
+
+        while (time.time() - self._t_start) < max_secs:
+            self._cycles += 1
+            targets = self.explorer.next_targets(self.blackboard, n=2)
+            if not targets:
+                break
+
+            for target in targets:
+                if (time.time() - self._t_start) >= max_secs:
+                    break
+                self._execute_target(target)
+
+        return self._finish()
+
+    def _execute_target(self, target: PNPTarget):
+        tool = target.tool
+        print(f"    [{self.agent_id}] {tool}  n={target.n_vars}  "
+              f"k={target.k}  ratio={target.ratio:.2f}  {target.reason}",
+              flush=True)
+        result = None
+        try:
+            if tool == "phase_scan":
+                k   = target.k
+                n   = target.n_vars
+                r0  = target.ratio
+                # Escanear ±2 alrededor del umbral
+                scan = phase_transition_scan(k, n,
+                                             ratio_min=max(0.5, r0 - 2),
+                                             ratio_max=r0 + 2,
+                                             n_points=6, seed=target.seed)
+                result = {"k": k, "n": n, "scan": scan}
+                # Mostrar sat_rate en el umbral
+                at_threshold = [s for s in scan
+                                 if abs(s["ratio"] - r0) < 0.5]
+                for pt in at_threshold:
+                    print(f"    [{self.agent_id}]   r={pt['ratio']:.2f}  "
+                          f"sat={pt['sat_rate']:.2f}  "
+                          f"hard={pt['hard_rate']:.2f}  "
+                          f"steps={pt['mean_steps']:.0f}",
+                          flush=True)
+                self.blackboard.record("phase_scan", result,
+                                       t_min=n, t_max=n)
+                # Guardar para análisis de crecimiento
+                if at_threshold:
+                    self._hardness_results.append(at_threshold[0])
+
+            elif tool == "hardness":
+                res = sat_hardness(target.k, target.n_vars, target.ratio,
+                                   n_trials=20, seed=target.seed)
+                result = res
+                print(f"    [{self.agent_id}]   sat={res['sat_rate']:.2f}  "
+                      f"hard={res['hard_rate']:.2f}  steps={res['mean_steps']:.0f}",
+                      flush=True)
+                self.blackboard.record("hardness", result,
+                                       t_min=target.n_vars, t_max=target.n_vars)
+                self._hardness_results.append(res)
+
+            elif tool == "resolution":
+                res = resolution_complexity(target.n_vars, 0, seed=target.seed)
+                result = res
+                print(f"    [{self.agent_id}]   PHP_{target.n_vars+1},{target.n_vars}  "
+                      f"steps={res['steps']}  refuted={res['refuted']}  "
+                      f"timeout={res['timeout']}",
+                      flush=True)
+                self.blackboard.record("resolution", result,
+                                       t_min=target.n_vars, t_max=target.n_vars)
+
+            elif tool == "circuit":
+                res = circuit_lower_bound(target.n_vars)
+                result = res
+                print(f"    [{self.agent_id}]   n={target.n_vars}bits  "
+                      f"lb={res['lower_bound_xor']}  naive={res['gates_naive_xor']}  "
+                      f"shannon_lb={res['shanon_lower_bound']}",
+                      flush=True)
+                self.blackboard.record("circuit", result,
+                                       t_min=target.n_vars, t_max=target.n_vars)
+
+            elif tool == "growth":
+                if len(self._hardness_results) >= 3:
+                    res = analyze_hardness_growth(self._hardness_results)
+                    result = res
+                    print(f"    [{self.agent_id}]   crecimiento={res.get('growth_type')}  "
+                          f"exponente={res.get('exponent_est')}  "
+                          f"exponencial={res.get('is_exponential')}",
+                          flush=True)
+                    self.blackboard.record("growth", result)
+                    if res.get("is_exponential"):
+                        self.blackboard.add_conjecture(
+                            f"Dureza 3-SAT crece exponencialmente (exp~{res['exponent_est']:.2f}) — "
+                            f"consistente con P≠NP",
+                            evidence=str(result), confidence=0.4
+                        )
+
+        except Exception as e:
+            self.blackboard.record("error", {"tool": tool, "error": str(e)})
+            print(f"    [{self.agent_id}] ERROR {tool}: {e}", flush=True)
+            return
+
+        # Oracle
+        if result:
+            obs      = {"tool": tool, "result": result}
+            question = self.explorer.should_ask_oracle(obs, self.blackboard)
+            if question:
+                print(f"    [{self.agent_id}] → oráculo: {question[:100]}...",
+                      flush=True)
+                answer = self.oracle.ask(question)
+                self.blackboard.record_oracle(question, answer)
+                print(f"    [{self.agent_id}] ← oráculo: {answer[:200]}",
+                      flush=True)
+
+    def _finish(self) -> dict:
+        elapsed = round(time.time() - self._t_start, 1)
+        state   = self.blackboard.to_epistemic_state()
+        conjs   = self.blackboard.conjectures()
+
+        richness  = min(1.0, self._cycles / 5.0)
+        resultado = "convergent" if conjs else "divergent"
+
+        print(f"  [Fin] ciclos={self._cycles}  "
+              f"conjeturas={len(conjs)}  oracle_calls={self.oracle.calls}  "
+              f"resultado={resultado}  richness={richness:.3f}  "
+              f"t={elapsed}s", flush=True)
+
+        out = Path("results") / f"epistemic_state_pnp_{self.agent_id}.json"
+        out.parent.mkdir(exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+
+        return state
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -305,6 +467,16 @@ if __name__ == "__main__":
     if args.corpus_path and Path(args.corpus_path).exists():
         with open(args.corpus_path, encoding="utf-8") as f:
             corpus_context = f.read(3000)
+
+    if args.problem == "pnp":
+        agent = AgentPNP(
+            agent_id=args.agent_id,
+            seed=args.seed,
+            api_key=api_key,
+            corpus_context=corpus_context,
+        )
+        agent.run(max_hours=args.max_hours)
+        import sys; sys.exit(0)
 
     agent = AgentV013(
         agent_id=args.agent_id,

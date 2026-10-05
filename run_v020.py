@@ -47,7 +47,7 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
     Retorna métricas extraídas del stdout + ruta al epistemic_state.
     """
     # v013 para riemann (exploración autónoma), v012 para los demás
-    script = "run_v013.py" if problem == "riemann" else "run_v012.py"
+    script = "run_v013.py" if problem in ("riemann", "pnp") else "run_v012.py"
     cmd = [
         sys.executable, script,
         "--problem",   problem,
