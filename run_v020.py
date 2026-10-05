@@ -63,12 +63,12 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
     log_path = Path(__file__).parent / "results" / f"worker_{problem}_{agent_id}.log"
     log_path.parent.mkdir(exist_ok=True)
     try:
-        with open(log_path, "w") as log_fh:
+        with open(log_path, "wb") as log_fh:
             result = subprocess.run(
                 cmd,
                 stdout=log_fh,
                 stderr=log_fh,
-                text=True,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
                 cwd=Path(__file__).parent,
                 timeout=worker_timeout,
             )
@@ -76,7 +76,7 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
         print(f"  [Worker {agent_id}] TIMEOUT tras {worker_timeout:.0f}s")
         result = None
     elapsed = time.time() - t0
-    out = log_path.read_text() if log_path.exists() else ""
+    out = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
 
     def _ex(pattern):
         import re
