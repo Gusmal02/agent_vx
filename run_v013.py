@@ -160,7 +160,7 @@ class AgentV013:
                 # Registrar región ANTES de procesar (evita re-scan en próximo ciclo)
                 self.blackboard.record("scan", {"status": "in_progress"},
                                        t_min=t0, t_max=t1)
-                hot_windows = scan_strip(t0, t1, step=2.0)
+                hot_windows = scan_strip(t0, t1, step=5.0)
                 result = {"hot_windows": hot_windows, "n_hot": len(hot_windows)}
                 # Actualizar con resultado real
                 self.blackboard.record("scan", result, t_min=t0, t_max=t1)

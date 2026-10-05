@@ -8,7 +8,7 @@ Ninguna de estas funciones es generada por LLM.
 import math
 
 
-def winding_number(sigma_range, t_range, n=40):
+def winding_number(sigma_range, t_range, n=20):
     """
     Número de vueltas de ζ(s) alrededor del origen en el contorno del rectángulo.
     ≠ 0 → hay ceros (o polos) dentro. O(n) evaluaciones en la frontera.
@@ -32,7 +32,7 @@ def winding_number(sigma_range, t_range, n=40):
     return round(total / (2 * math.pi))
 
 
-def isolate_zeros(sigma_range, t_range, known_winding=None, depth=7):
+def isolate_zeros(sigma_range, t_range, known_winding=None, depth=5):
     """
     Bisección recursiva para aislar ceros individuales.
     Retorna lista de (sigma_est, t_est) para cada cero.
