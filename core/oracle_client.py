@@ -62,12 +62,10 @@ class OracleClient:
 
         if api_key and api_key != "PLACEHOLDER":
             try:
-                import anthropic
-                self._client   = anthropic.Anthropic(api_key=api_key)
+                from core.anthropic_http import Anthropic
+                self._client   = Anthropic(api_key=api_key)
                 self._available = True
                 print(f"  [Oracle] disponible ✓  (presupuesto: ${budget_usd:.2f})")
-            except ImportError:
-                print("  [Oracle] anthropic no instalado — deshabilitado")
             except Exception as e:
                 print(f"  [Oracle] error al inicializar: {e}")
         else:

@@ -548,8 +548,9 @@ class DisruptorAgent:
             return self._synthetic_attacks(robust_findings)
 
         try:
-            import anthropic, re
-            client = anthropic.Anthropic(api_key=self.api_key)
+            import re
+            from core.anthropic_http import Anthropic
+            client = Anthropic(api_key=self.api_key)
             findings_text = "\n".join(
                 f"  [{i+1}] {action}  score={h.get('score_mean',0):.3f}"
                 for i, (action, h) in enumerate(robust_findings.items())

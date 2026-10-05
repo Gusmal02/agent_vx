@@ -62,8 +62,8 @@ class MetaMonitorAgent:
 
         if api_key:
             try:
-                import anthropic
-                self._client    = anthropic.Anthropic(api_key=api_key)
+                from core.anthropic_http import Anthropic
+                self._client    = Anthropic(api_key=api_key)
                 self._available = True
                 print(f"  [MetaMonitor] disponible ✓  modelo={model}  "
                       f"intervalo={interval_min:.0f}min  budget=${budget_usd:.2f}")

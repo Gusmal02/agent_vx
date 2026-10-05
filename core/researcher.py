@@ -82,11 +82,18 @@ class ResearcherAgent:
         print(f"  [Researcher] {len(papers)} papers encontrados en arxiv")
 
         experiments = []
-        for i, paper in enumerate(papers):
-            print(f"  [Researcher] procesando [{i+1}/{len(papers)}]: {paper['title'][:60]}...")
-            hyps = self._extract_hypotheses(paper, max_hyps_per_paper)
-            experiments.extend(hyps)
-            time.sleep(0.3)  # amable con arxiv
+        if papers:
+            for i, paper in enumerate(papers):
+                print(f"  [Researcher] procesando [{i+1}/{len(papers)}]: {paper['title'][:60]}...")
+                hyps = self._extract_hypotheses(paper, max_hyps_per_paper)
+                experiments.extend(hyps)
+                time.sleep(0.3)  # amable con arxiv
+        else:
+            print(f"  [Researcher] arxiv no disponible — generando hipótesis vía oracle")
+            experiments = self._generate_hypotheses_oracle_direct(
+                n=n_papers * max_hyps_per_paper,
+                existing_findings=existing_findings,
+            )
 
         # Cargar corpus existente y añadir sin duplicar
         existing_corpus = self._load_existing()
@@ -164,8 +171,8 @@ class ResearcherAgent:
 
     def _extract_with_oracle(self, paper: dict, max_hyps: int) -> list[dict]:
         try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=self.api_key)
+            from core.anthropic_http import Anthropic
+            client = Anthropic(api_key=self.api_key)
             prompt = f"""Paper: "{paper['title']}"
 Abstract: {paper['abstract'][:600]}
 
@@ -253,6 +260,73 @@ Responde SOLO en JSON:
         with open(out, "w", encoding="utf-8") as f:
             json.dump(corpus, f, indent=2, ensure_ascii=False)
         return out
+
+    # ── Generación directa vía oracle (fallback sin arxiv) ───────────────────
+
+    def _generate_hypotheses_oracle_direct(
+        self,
+        n: int = 8,
+        existing_findings: dict | None = None,
+    ) -> list[dict]:
+        """
+        Genera hipótesis cuantitativas testables directamente via Claude
+        cuando arxiv no está accesible.
+        """
+        if not self.api_key:
+            return []
+        try:
+            from core.anthropic_http import Anthropic
+            client = Anthropic(api_key=self.api_key)
+
+            extra = ""
+            if existing_findings:
+                terms = list(existing_findings.keys())[:3]
+                extra = f"\nHallazgos previos a ampliar o contradecir: {', '.join(terms)}"
+
+            prompt = f"""Genera {n} hipótesis matemáticas CUANTITATIVAS y FALSIFICABLES sobre el problema: {self.problem}.{extra}
+
+Cada hipótesis debe:
+- Ser testable computacionalmente con numpy/sympy
+- Poder confirmarse o refutarse numéricamente
+- Código < 20 líneas que termine con: _result = {{"score": float, "confirms": bool, "metric": str}}
+- Usar solo numpy (np), sympy (sp), o stdlib (no archivos externos)
+
+Responde SOLO en JSON:
+{{"hypotheses": [
+  {{
+    "statement": "hipótesis cuantitativa en una oración",
+    "code": "import numpy as np\\nnp.random.seed(42)\\n# experimento\\n_result = {{\\"score\\": 0.0, \\"confirms\\": True, \\"metric\\": \\"nombre\\"}}",
+    "expected_if_true": "condición observable de confirmación"
+  }}
+]}}"""
+
+            resp = client.messages.create(
+                model="claude-sonnet-4-6", max_tokens=2400,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            self._oracle_calls += 1
+            text = resp.content[0].text
+            m = re.search(r'\{.*\}', text, re.DOTALL)
+            if not m:
+                return []
+            data = json.loads(m.group())
+            hyps = data.get("hypotheses", [])
+            return [
+                {
+                    "id":               f"oracle_direct_{self.problem}_h{i}",
+                    "source_url":       "",
+                    "source_title":     f"Oracle-generated hypothesis for {self.problem}",
+                    "hypothesis":       h.get("statement", ""),
+                    "code":             h.get("code", ""),
+                    "expected_if_true": h.get("expected_if_true", ""),
+                    "origin":           "oracle_direct",
+                }
+                for i, h in enumerate(hyps[:n])
+                if h.get("code")
+            ]
+        except Exception as e:
+            print(f"  [Researcher/oracle_direct] error: {e}")
+            return []
 
     # ── Utilidad para Monitor ─────────────────────────────────────────────────
 
