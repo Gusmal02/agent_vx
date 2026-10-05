@@ -1263,8 +1263,17 @@ _result = {{"action": "replay_vs_finetune", "replay_frac": round({replay_frac:.2
 def _riemann_action(action: str, cycle: int,
                     executor: DirectExecutor,
                     tracker: HypothesisTracker,
-                    log: dict) -> tuple[float, float | None]:
+                    log: dict,
+                    living_corpus=None) -> tuple[float, float | None]:
     """Experimentos numéricos sobre la distribución de ceros de zeta."""
+    # Consultar corpus vivo: ¿ya sabemos esto y podemos saltarlo?
+    _action_tags = action.replace("_", " ").split()
+    if living_corpus:
+        skip = living_corpus.should_skip(_action_tags)
+        if skip:
+            print(f"  [LivingCorpus] SKIP {action} — conocido: {skip['statement'][:80]}")
+            log["skipped_known"] = skip["statement"]
+            return 0.95, None   # devuelve score alto: es un hecho confirmado
 
     if action == "zero_density_sweep":
         # Keating-Snaith: momentos de |ζ(1/2+it)| deben crecer como C_k*(log T)^(k²)
@@ -1661,12 +1670,13 @@ _result = {{"refutation_length": np.log2(refutation_length) if refutation_length
 
 def execute_action(action: str, problem: str, cycle: int,
                    executor: DirectExecutor,
-                   tracker: HypothesisTracker) -> tuple[float, dict, float | None]:
+                   tracker: HypothesisTracker,
+                   living_corpus=None) -> tuple[float, dict, float | None]:
     log = {"action": action, "cycle": cycle, "executor_results": []}
     if problem == "causal":
         score, key_metric = _causal_action(action, cycle, executor, tracker, log)
     elif problem == "riemann":
-        score, key_metric = _riemann_action(action, cycle, executor, tracker, log)
+        score, key_metric = _riemann_action(action, cycle, executor, tracker, log, living_corpus)
     elif problem == "pnp":
         score, key_metric = _pnp_action(action, cycle, executor, tracker, log)
     else:
@@ -2028,6 +2038,22 @@ if __name__ == "__main__":
         if kn:
             domain_knowledge_parts.append(kn)
     domain_knowledge = "\n\n".join(domain_knowledge_parts)
+
+    # ── Corpus vivo: hechos conocidos + hallazgos previos ───────────────────
+    _living_corpus = None
+    if args.problem in _MATH_DOMAINS:
+        try:
+            from core.living_corpus import LivingCorpus, SatelliteCorpus
+            _living_corpus = LivingCorpus(args.problem)
+            _sat_corpus    = SatelliteCorpus(args.agent_id or "solo", args.problem)
+            corpus_ctx     = _living_corpus.to_oracle_context()
+            if corpus_ctx:
+                domain_knowledge = corpus_ctx + "\n\n" + domain_knowledge if domain_knowledge else corpus_ctx
+            print(f"  [LivingCorpus] {_living_corpus.summary()}")
+        except Exception as _lc_err:
+            print(f"  [LivingCorpus] no disponible: {_lc_err}")
+            _living_corpus = None
+
     if domain_knowledge:
         oracle.set_domain_knowledge(domain_knowledge)
         print(f"  [Knowledge] {len(domain_knowledge)} chars → oracle")
@@ -2204,7 +2230,8 @@ if __name__ == "__main__":
 
             # ── Ejecutar acción ──────────────────────────────────────────────
             score, attack_log, key_metric = execute_action(
-                action, args.problem, global_cycle, executor, tracker
+                action, args.problem, global_cycle, executor, tracker,
+                living_corpus=_living_corpus,
             )
             all_logs.append(attack_log)
             for res in attack_log["executor_results"]:
