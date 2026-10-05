@@ -540,37 +540,128 @@ class ResearchMonitor:
 
 # ── DisruptorAgent ────────────────────────────────────────────────────────────
 
+class DivergenceDisruptor:
+    """
+    Pre-filtro para DisruptorAgent basado en el teorema de la divergencia.
+
+    El campo F = (Re ζ, Im ζ) tiene divergencia cero en toda región sin ceros.
+    El winding number (principio del argumento) detecta cuántos ceros hay
+    dentro de una región evaluando solo la FRONTERA — O(n_boundary) vs O(interior).
+
+    Uso: clasifica los hallazgos robustos en estables (winding=0, no atacar)
+    vs inestables (winding≠0, atacar con bisección). Solo aplica a dominios
+    matemáticos con función ζ bien definida (riemann, pnp).
+    """
+
+    # Regiones del plano crítico que cada acción explora
+    ACTION_REGIONS = {
+        "zero_density_sweep":     ((0.40, 0.60), (14,  50)),
+        "prime_counting_error":   ((0.40, 0.60), (50,  200)),
+        "montgomery_correlation": ((0.40, 0.60), (200, 500)),
+        "explicit_formula_check": ((0.40, 0.60), (14,  30)),
+        "gram_law_violations":    ((0.40, 0.60), (14,  100)),
+    }
+
+    def classify(self, findings: dict) -> tuple[dict, dict]:
+        """
+        Divide findings en {estables} y {targets}.
+        Estable  → winding=0, campo coherente, no atacar.
+        Target   → winding≠0, hay ceros/singularidades adentro, atacar.
+        Devuelve (targets, stable) dicts con el mismo formato que findings.
+        """
+        try:
+            import mpmath
+            import numpy as np
+            mpmath.mp.dps = 12
+        except ImportError:
+            return findings, {}   # sin mpmath: atacar todo
+
+        targets, stable = {}, {}
+        for action, data in findings.items():
+            region = self.ACTION_REGIONS.get(action)
+            if region is None:
+                targets[action] = data   # sin región definida: atacar por defecto
+                continue
+
+            sr, tr = region
+            w = self._winding_number(sr, tr, mpmath)
+            data_with_w = {**data, "winding": w}
+            if w == 0:
+                stable[action]  = data_with_w
+                print(f"  [Divergence]   estable  {action:30s}  winding={w:+d}")
+            else:
+                targets[action] = data_with_w
+                print(f"  [Divergence] ⚠ TARGET   {action:30s}  winding={w:+d}")
+
+        return targets, stable
+
+    def _winding_number(self, sigma_range, t_range, mpmath, n=30) -> int:
+        import numpy as np
+        s0, s1 = sigma_range
+        t0, t1 = t_range
+        pts = (
+            [complex(s, t0) for s in np.linspace(s0, s1, n)] +
+            [complex(s1, t) for t in np.linspace(t0, t1, n)] +
+            [complex(s, t1) for s in np.linspace(s1, s0, n)] +
+            [complex(s0, t) for t in np.linspace(t1, t0, n)]
+        )
+        args = [float(mpmath.arg(mpmath.zeta(p))) for p in pts]
+        total = 0.0
+        for i in range(len(args)):
+            d = args[(i+1) % len(args)] - args[i]
+            d = (d + np.pi) % (2*np.pi) - np.pi
+            total += d
+        return round(total / (2*np.pi))
+
+
 class DisruptorAgent:
     """
     Agente especial: intenta FALSIFICAR los hallazgos robustos del swarm.
     No hace SURVEY normal — recibe hallazgos robustos y genera ataques directos.
+    Usa DivergenceDisruptor para priorizar: solo ataca regiones con winding≠0.
     Usa el oracle para proponer código de falsificación, luego lo ejecuta.
     """
 
     def __init__(self, problem: str, api_key: str | None, budget_usd: float = 0.50):
-        self.problem   = problem
-        self.api_key   = api_key
-        self.budget    = budget_usd
+        self.problem    = problem
+        self.api_key    = api_key
+        self.budget     = budget_usd
         self._results: list[dict] = []
+        self._div       = DivergenceDisruptor() if problem in ("riemann", "pnp") else None
 
     def run(self, robust_findings: dict, round_n: int) -> dict:
         if not robust_findings:
             print("  [Disruptor] sin hallazgos robustos que atacar")
             return {"attacks": [], "breaks_found": 0}
 
-        print(f"\n  [Disruptor] atacando {len(robust_findings)} hallazgos robustos...")
-        attacks = self._generate_attacks(robust_findings)
+        # ── Filtrar por divergencia ──────────────────────────────────────────
+        targets = robust_findings
+        stable  = {}
+        if self._div:
+            print(f"\n  [Disruptor/Divergence] clasificando {len(robust_findings)} hallazgos...")
+            targets, stable = self._div.classify(robust_findings)
+            if stable:
+                print(f"  [Disruptor] {len(stable)} hallazgos estables (winding=0) → omitidos")
+            if not targets:
+                print("  [Disruptor] todos los hallazgos son estables — sin ataques necesarios")
+                return {"attacks": [], "breaks_found": 0, "stable": list(stable.keys())}
+
+        print(f"\n  [Disruptor] atacando {len(targets)}/{len(robust_findings)} targets...")
+        attacks = self._generate_attacks(targets)
         results = self._execute_attacks(attacks)
 
         breaks = [r for r in results if r.get("breaks")]
         print(f"  [Disruptor] {len(breaks)}/{len(results)} ataques encontraron límites")
 
         summary = {
-            "round":        round_n,
-            "n_targeted":   len(robust_findings),
-            "n_attacked":   len(results),
-            "breaks_found": len(breaks),
-            "attacks":      results,
+            "round":          round_n,
+            "n_total":        len(robust_findings),
+            "n_stable":       len(stable),
+            "n_targeted":     len(targets),
+            "n_attacked":     len(results),
+            "breaks_found":   len(breaks),
+            "stable_actions": list(stable.keys()),
+            "attacks":        results,
         }
         self._save(summary, round_n)
         return summary
