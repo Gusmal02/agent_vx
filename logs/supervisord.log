@@ -1,9 +1,0 @@
-2026-10-04 21:44:56,086 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
-2026-10-04 21:44:56,089 INFO RPC interface 'supervisor' initialized
-2026-10-04 21:44:56,089 CRIT Server 'unix_http_server' running without any HTTP authentication checking
-2026-10-04 21:44:56,091 INFO daemonizing the supervisord process
-2026-10-04 21:44:56,095 INFO supervisord started with pid 1019
-2026-10-04 21:44:57,099 INFO spawned: 'riemann_opus' with pid 1021
-2026-10-04 21:44:57,102 INFO spawned: 'riemann_sonnet' with pid 1022
-2026-10-04 21:45:07,326 INFO success: riemann_opus entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
-2026-10-04 21:45:07,326 INFO success: riemann_sonnet entered RUNNING state, process has stayed up for > than 10 seconds (startsecs)
