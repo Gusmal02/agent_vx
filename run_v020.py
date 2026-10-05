@@ -19,6 +19,7 @@ Uso:
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -137,6 +138,14 @@ class MultiAgentCoordinator:
             print(f"  meta_monitor=ON")
         print(f"{'═'*65}\n")
 
+        # Instalar handler de SIGTERM para salida limpia (container recycle)
+        _original_sigterm = signal.getsignal(signal.SIGTERM)
+        def _handle_sigterm(signum, frame):
+            print(f"  [Coordinator] SIGTERM recibido — salida limpia", flush=True)
+            signal.signal(signal.SIGTERM, _original_sigterm)
+            raise SystemExit(0)
+        signal.signal(signal.SIGTERM, _handle_sigterm)
+
         monitor     = ResearchMonitor(self.problem, self.quorum, self.n_agents)
         agent_ids   = [f"a{i+1}" for i in range(self.n_agents)]
         corpus_path: str | None = None
@@ -199,6 +208,9 @@ class MultiAgentCoordinator:
             # Frío solo si es la primera ronda real del run (no hay estado guardado)
             cold = (round_n == 1 and resume_from_round == 1)
 
+            import threading
+            _done_event = threading.Event()
+
             with ThreadPoolExecutor(max_workers=self.n_agents) as pool:
                 futures = {
                     pool.submit(
@@ -213,12 +225,23 @@ class MultiAgentCoordinator:
                     ): i
                     for i in range(self.n_agents)
                 }
+
+                def _heartbeat():
+                    while not _done_event.wait(30):
+                        alive = sum(1 for f in futures if not f.done())
+                        print(f"  [Heartbeat] esperando {alive} workers  t={time.time()-t0:.0f}s",
+                              flush=True)
+                threading.Thread(target=_heartbeat, daemon=True).start()
+
                 for fut in as_completed(futures):
                     try:
                         worker_results.append(fut.result())
                     except BaseException as e:
                         i = futures[fut]
-                        print(f"  [Worker {agent_ids[i]}] ERROR ({type(e).__name__}): {e}")
+                        print(f"  [Worker {agent_ids[i]}] ERROR ({type(e).__name__}): {e}",
+                              flush=True)
+
+            _done_event.set()
 
             elapsed = time.time() - t0
 
