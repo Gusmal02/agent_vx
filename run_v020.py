@@ -62,7 +62,7 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
     # Fix: timeout explícito para que el coordinator nunca se bloquee para siempre.
     # Fix: output a archivo en lugar de capture_output para visibilidad en tiempo real
     #      y para evitar que el pipe llene el buffer en runs largos.
-    worker_timeout = max_hours * 3600 + 300   # max_hours + 5 min de gracia
+    worker_timeout = max_hours * 3600 + 30    # max_hours + 30s de gracia
     log_path = Path(__file__).parent / "results" / f"worker_{problem}_{agent_id}.log"
     log_path.parent.mkdir(exist_ok=True)
     try:
