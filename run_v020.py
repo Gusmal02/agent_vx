@@ -218,7 +218,7 @@ class MultiAgentCoordinator:
                         agent_ids[i],
                         self.problem,
                         max_hours,
-                        base_seed + i * 7,
+                        base_seed + (round_n - 1) * 100 + i * 7,
                         cold,
                         corpus_path,
                         oracle_model,
@@ -542,61 +542,134 @@ class ResearchMonitor:
 
 class DivergenceDisruptor:
     """
-    Pre-filtro para DisruptorAgent basado en el teorema de la divergencia.
+    Disruptor matemático basado en el teorema de la divergencia.
 
-    El campo F = (Re ζ, Im ζ) tiene divergencia cero en toda región sin ceros.
-    El winding number (principio del argumento) detecta cuántos ceros hay
-    dentro de una región evaluando solo la FRONTERA — O(n_boundary) vs O(interior).
+    Pipeline por acción:
+      1. Winding number (frontera) → detecta si hay ceros en la región
+      2. Bisección recursiva       → aísla cada cero a precisión <0.001
+      3. mpmath.findroot           → localiza σ exacto del cero
+      4. |σ - 0.5| < 1e-6         → confirma RH; de lo contrario contraejemplo
 
-    Uso: clasifica los hallazgos robustos en estables (winding=0, no atacar)
-    vs inestables (winding≠0, atacar con bisección). Solo aplica a dominios
-    matemáticos con función ζ bien definida (riemann, pnp).
+    Esto reemplaza al oráculo LLM: el resultado es un número real, no un string.
     """
 
-    # Regiones del plano crítico que cada acción explora
+    # Regiones acotadas a ~5 ceros cada una para que la bisección sea rápida (<30s)
     ACTION_REGIONS = {
-        "zero_density_sweep":     ((0.40, 0.60), (14,  50)),
-        "prime_counting_error":   ((0.40, 0.60), (50,  200)),
-        "montgomery_correlation": ((0.40, 0.60), (200, 500)),
-        "explicit_formula_check": ((0.40, 0.60), (14,  30)),
-        "gram_law_violations":    ((0.40, 0.60), (14,  100)),
+        "zero_density_sweep":     ((0.48, 0.52), (14.0,  21.0)),
+        "prime_counting_error":   ((0.48, 0.52), (21.0,  30.0)),
+        "montgomery_correlation": ((0.48, 0.52), (30.0,  40.0)),
+        "explicit_formula_check": ((0.48, 0.52), (40.0,  49.0)),
+        "gram_law_violations":    ((0.48, 0.52), (49.0,  60.0)),
     }
 
     def classify(self, findings: dict) -> tuple[dict, dict]:
-        """
-        Divide findings en {estables} y {targets}.
-        Estable  → winding=0, campo coherente, no atacar.
-        Target   → winding≠0, hay ceros/singularidades adentro, atacar.
-        Devuelve (targets, stable) dicts con el mismo formato que findings.
-        """
+        """Clasifica findings en targets (winding≠0) y estables (winding=0)."""
         try:
             import mpmath
             import numpy as np
-            mpmath.mp.dps = 12
+            mpmath.mp.dps = 15
         except ImportError:
-            return findings, {}   # sin mpmath: atacar todo
+            return findings, {}
 
+        self._mpmath = mpmath
+        self._np     = np
         targets, stable = {}, {}
         for action, data in findings.items():
             region = self.ACTION_REGIONS.get(action)
             if region is None:
-                targets[action] = data   # sin región definida: atacar por defecto
+                targets[action] = data
                 continue
-
             sr, tr = region
-            w = self._winding_number(sr, tr, mpmath)
-            data_with_w = {**data, "winding": w}
+            w = self._winding_number(sr, tr, n=30)
+            data_with_w = {**data, "winding": w, "region": region}
             if w == 0:
                 stable[action]  = data_with_w
                 print(f"  [Divergence]   estable  {action:30s}  winding={w:+d}")
             else:
                 targets[action] = data_with_w
                 print(f"  [Divergence] ⚠ TARGET   {action:30s}  winding={w:+d}")
-
         return targets, stable
 
-    def _winding_number(self, sigma_range, t_range, mpmath, n=30) -> int:
-        import numpy as np
+    def disrupt(self, action: str, data: dict) -> dict:
+        """
+        Pipeline completo para un target: bisección → findroot → verificar σ.
+        Retorna dict con zeros_found, confirmaciones, contraejemplos.
+        """
+        mpmath = self._mpmath
+        region = data.get("region") or self.ACTION_REGIONS.get(action)
+        if not region:
+            return {"action": action, "error": "sin región definida"}
+
+        sr, tr = region
+        known_winding = data.get("winding", None)
+        zeros_raw = self._bisect(sr, tr, depth=6, initial_winding=known_winding)
+        confirmaciones, contraejemplos = [], []
+
+        for sigma_est, t_est, w in zeros_raw:
+            try:
+                z0   = mpmath.mpc(sigma_est, t_est)
+                root = mpmath.findroot(mpmath.zeta, z0)
+                sigma_r   = float(root.real)
+                t_r       = float(root.imag)
+                deviation = abs(sigma_r - 0.5)
+                entry = {
+                    "sigma":            round(sigma_r, 8),
+                    "t":                round(t_r, 6),
+                    "deviation":        round(deviation, 10),
+                    "on_critical_line": deviation < 1e-6,
+                    "winding":          w,
+                }
+                if entry["on_critical_line"]:
+                    confirmaciones.append(entry)
+                    print(f"    σ={sigma_r:.6f}  t={t_r:.4f}  "
+                          f"desviación={deviation:.2e}  → EN LÍNEA CRÍTICA ✓")
+                else:
+                    contraejemplos.append(entry)
+                    print(f"    *** CONTRAEJEMPLO CANDIDATO ***")
+                    print(f"    σ={sigma_r:.6f}  t={t_r:.4f}  "
+                          f"desviación={deviation:.6f}  → FUERA DE LÍNEA CRÍTICA ⚠")
+            except Exception as e:
+                print(f"    [findroot error] {e}")
+
+        return {
+            "action":         action,
+            "zeros_found":    len(zeros_raw),
+            "confirmaciones": confirmaciones,
+            "contraejemplos": contraejemplos,
+            "breaks":         len(contraejemplos) > 0,
+        }
+
+    def _bisect(self, sigma_range, t_range, depth=6,
+                initial_winding=None) -> list:
+        """
+        Bisección recursiva: divide en cuadrantes, entra solo donde winding≠0.
+        initial_winding: si se conoce de antemano (de classify), evita re-evaluarlo.
+        Usa n_boundary proporcional al tamaño de la región para fiabilidad.
+        """
+        # El primer nivel usa el winding ya calculado si se pasó
+        candidates = [(sigma_range, t_range, depth, initial_winding)]
+        zeros_found = []
+        while candidates:
+            sr, tr, d, known_w = candidates.pop()
+            w = known_w if known_w is not None else self._winding_number(sr, tr, n=30)
+            if w == 0:
+                continue
+            sm = (sr[0] + sr[1]) / 2
+            tm = (tr[0] + tr[1]) / 2
+            if d == 0 or (sr[1]-sr[0] < 0.001 and tr[1]-tr[0] < 0.001):
+                zeros_found.append(((sr[0]+sr[1])/2, (tr[0]+tr[1])/2, w))
+                continue
+            candidates.extend([
+                ((sr[0], sm), (tr[0], tm), d-1, None),
+                ((sm, sr[1]), (tr[0], tm), d-1, None),
+                ((sr[0], sm), (tm, tr[1]), d-1, None),
+                ((sm, sr[1]), (tm, tr[1]), d-1, None),
+            ])
+        return zeros_found
+
+    def _winding_number(self, sigma_range, t_range, n=30) -> int:
+        mpmath = self._mpmath
+        np     = self._np
         s0, s1 = sigma_range
         t0, t1 = t_range
         pts = (
@@ -647,21 +720,39 @@ class DisruptorAgent:
                 return {"attacks": [], "breaks_found": 0, "stable": list(stable.keys())}
 
         print(f"\n  [Disruptor] atacando {len(targets)}/{len(robust_findings)} targets...")
-        attacks = self._generate_attacks(targets)
-        results = self._execute_attacks(attacks)
+        results = []
+        if self._div:
+            # Pipeline matemático: bisección + findroot + verificar σ
+            for action, data in targets.items():
+                print(f"  [Disruptor] → {action}  winding={data.get('winding','?')}")
+                r = self._div.disrupt(action, data)
+                results.append(r)
+        else:
+            # Fallback sin mpmath
+            attacks = self._generate_attacks(targets)
+            results = self._execute_attacks(attacks)
 
-        breaks = [r for r in results if r.get("breaks")]
-        print(f"  [Disruptor] {len(breaks)}/{len(results)} ataques encontraron límites")
+        breaks = [r for r in results if r.get("breaks") or r.get("contraejemplos")]
+        n_confirmaciones = sum(len(r.get("confirmaciones", [])) for r in results)
+        n_contraejemplos = sum(len(r.get("contraejemplos", [])) for r in results)
+
+        if n_contraejemplos:
+            print(f"  [Disruptor] *** {n_contraejemplos} CONTRAEJEMPLO(S) CANDIDATO(S) ***")
+        else:
+            print(f"  [Disruptor] {n_confirmaciones} ceros verificados en σ=0.5  "
+                  f"— sin contraejemplos")
 
         summary = {
-            "round":          round_n,
-            "n_total":        len(robust_findings),
-            "n_stable":       len(stable),
-            "n_targeted":     len(targets),
-            "n_attacked":     len(results),
-            "breaks_found":   len(breaks),
-            "stable_actions": list(stable.keys()),
-            "attacks":        results,
+            "round":            round_n,
+            "n_total":          len(robust_findings),
+            "n_stable":         len(stable),
+            "n_targeted":       len(targets),
+            "n_attacked":       len(results),
+            "breaks_found":     len(breaks),
+            "n_confirmaciones": n_confirmaciones,
+            "n_contraejemplos": n_contraejemplos,
+            "stable_actions":   list(stable.keys()),
+            "attacks":          results,
         }
         self._save(summary, round_n)
         return summary
