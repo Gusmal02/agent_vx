@@ -2421,8 +2421,7 @@ if __name__ == "__main__":
                     cross_analyzer, finding=finding_document)
 
         # ── Guardar estado epistémico para próxima sesión ────────────────────
-        if not args.cold_start:
-            state_mgr.save(evidence_bank, cross_analyzer, epi, prior_state)
+        state_mgr.save(evidence_bank, cross_analyzer, epi, prior_state)
 
         print(f"\n[Fin] ciclos={global_cycle}  "
               f"resultado={finding_document['result']}  "
