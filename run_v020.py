@@ -75,6 +75,9 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
     except subprocess.TimeoutExpired:
         print(f"  [Worker {agent_id}] TIMEOUT tras {worker_timeout:.0f}s")
         result = None
+    except BaseException as _exc:
+        print(f"  [Worker {agent_id}] EXCEPCIÓN en subprocess: {type(_exc).__name__}: {_exc}")
+        result = None
     elapsed = time.time() - t0
     out = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
 
@@ -213,9 +216,9 @@ class MultiAgentCoordinator:
                 for fut in as_completed(futures):
                     try:
                         worker_results.append(fut.result())
-                    except Exception as e:
+                    except BaseException as e:
                         i = futures[fut]
-                        print(f"  [Worker {agent_ids[i]}] ERROR: {e}")
+                        print(f"  [Worker {agent_ids[i]}] ERROR ({type(e).__name__}): {e}")
 
             elapsed = time.time() - t0
 
