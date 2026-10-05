@@ -60,6 +60,8 @@ class OracleClient:
         self._max_per_hour  = _lim["per_hour"]
         self._opus_cap      = _lim["opus_cap"]
 
+        self._domain_knowledge: str = ""
+
         if api_key and api_key != "PLACEHOLDER":
             try:
                 from core.anthropic_http import Anthropic
@@ -70,6 +72,10 @@ class OracleClient:
                 print(f"  [Oracle] error al inicializar: {e}")
         else:
             print("  [Oracle] sin API key — deshabilitado")
+
+    def set_domain_knowledge(self, knowledge: str) -> None:
+        """Inyecta conocimiento de dominio que se prepende a cada prompt del oracle."""
+        self._domain_knowledge = knowledge.strip()
 
     # ── Rate limiting ─────────────────────────────────────────────────────────
 
@@ -258,10 +264,14 @@ Responde SOLO en JSON:
 
     def _call(self, model: str, prompt: str, label: str = "", max_tokens: int = 600) -> Optional[dict]:
         try:
+            full_prompt = (
+                f"CONOCIMIENTO DE DOMINIO:\n{self._domain_knowledge}\n\n{prompt}"
+                if self._domain_knowledge else prompt
+            )
             resp = self._client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": full_prompt}],
             )
             # Filtrar solo TextBlock (ignorar ThinkingBlock de extended thinking)
             text_blocks = [b for b in resp.content if hasattr(b, "text")]

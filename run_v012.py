@@ -43,8 +43,24 @@ from core.hypothesis_tracker    import HypothesisTracker
 from core.research_memory       import ResearchMemory
 from core.action_inventor       import ActionInventor
 from core.corpus.ml_problems_corpus import (
-    get_ml_corpus, list_ml_corpus_for_domain
+    get_ml_corpus as _get_ml_corpus,
+    list_ml_corpus_for_domain as _list_ml_corpus_for_domain,
 )
+from core.corpus.math_corpus import (
+    get_corpus as _get_math_corpus,
+    list_corpus_for_domain as _list_math_corpus_for_domain,
+)
+
+_MATH_DOMAINS = {"riemann", "pnp"}
+
+def get_ml_corpus(name: str) -> dict:
+    c = _get_math_corpus(name)
+    return c if c else _get_ml_corpus(name)
+
+def list_ml_corpus_for_domain(domain: str) -> list:
+    if domain in _MATH_DOMAINS:
+        return _list_math_corpus_for_domain(domain)
+    return _list_ml_corpus_for_domain(domain)
 
 load_dotenv()
 
@@ -1999,6 +2015,7 @@ if __name__ == "__main__":
     # ── Corpus ──────────────────────────────────────────────────────────────
     print(f"[Corpus] Cargando para '{args.problem}'...")
     all_tools: set[str] = set()
+    domain_knowledge_parts: list[str] = []
     for corpus_name in list_ml_corpus_for_domain(args.problem):
         corpus = get_ml_corpus(corpus_name)
         for td in corpus.get("initial_tools", []):
@@ -2007,6 +2024,13 @@ if __name__ == "__main__":
                 if ok:
                     all_tools.add(td["name"])
                     print(f"  [Tool] {td['name']}")
+        kn = corpus.get("knowledge", "").strip()
+        if kn:
+            domain_knowledge_parts.append(kn)
+    domain_knowledge = "\n\n".join(domain_knowledge_parts)
+    if domain_knowledge:
+        oracle.set_domain_knowledge(domain_knowledge)
+        print(f"  [Knowledge] {len(domain_knowledge)} chars → oracle")
     print(f"  Tools: {list(all_tools)}\n")
 
     # ── Acciones + estado epistémico ────────────────────────────────────────
