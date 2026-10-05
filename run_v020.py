@@ -46,8 +46,10 @@ def run_worker(agent_id: str, problem: str, max_hours: float,
     Lanza run_v012.py como subproceso con --agent-id único.
     Retorna métricas extraídas del stdout + ruta al epistemic_state.
     """
+    # v013 para riemann (exploración autónoma), v012 para los demás
+    script = "run_v013.py" if problem == "riemann" else "run_v012.py"
     cmd = [
-        sys.executable, "run_v012.py",
+        sys.executable, script,
         "--problem",   problem,
         "--max-hours", str(max_hours),
         "--seed",      str(seed),
