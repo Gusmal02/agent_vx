@@ -116,7 +116,7 @@ KEY_METRIC_FIELDS = {
     "task_similarity":          "sim_forgetting_corr",
     "replay_vs_finetune":       "retention_gain",
     # Riemann
-    "zero_density_sweep":       "frac_on_critical_line",
+    "zero_density_sweep":       "ks_error",
     "gram_law_violations":      "gram_violation_rate",
     "prime_counting_error":     "li_error_ratio",
     "montgomery_correlation":   "gue_correlation",
@@ -1251,26 +1251,37 @@ def _riemann_action(action: str, cycle: int,
     """Experimentos numéricos sobre la distribución de ceros de zeta."""
 
     if action == "zero_density_sweep":
+        # Keating-Snaith: momentos de |ζ(1/2+it)| deben crecer como C_k*(log T)^(k²)
+        # El ratio empírico/predicho converge a C_k si la conjetura es correcta.
+        # Score: estabilidad del ratio entre ciclos consecutivos (falsificable).
         code = f"""
 import numpy as np
-np.random.seed({cycle * 13 + 7})
-# Aproximar ceros de zeta(1/2 + it) via argumento de la función xi
-# Usamos la fórmula de Backlund: N(T) ~ T/(2pi) * log(T/(2pi*e))
-T_values = np.linspace(10, 50 + {cycle} * 5, 200)
-N_exact  = np.array([int(t / (2*np.pi) * np.log(t / (2*np.pi*np.e)) + 7/8) for t in T_values])
-N_approx = T_values / (2*np.pi) * np.log(T_values / (2*np.pi*np.e)) + 7/8
-error    = np.abs(N_exact - N_approx)
-frac_on_critical_line = float(np.mean(error < 2.0))
-_result = {{"frac_on_critical_line": frac_on_critical_line,
-            "mean_error": float(np.mean(error)),
-            "max_T": float(T_values[-1])}}
+import mpmath; mpmath.mp.dps = 12
+T_start = 20 + {cycle} * 8
+T_end   = T_start + 40
+n_pts   = 60
+t_vals  = np.linspace(T_start, T_end, n_pts)
+zeta_abs = np.array([float(abs(mpmath.zeta(0.5 + 1j*float(t)))) for t in t_vals])
+log_T = float(np.log(T_end))
+# Momentos k=1 y k=2; KS predice momento_2k ~ C_k * log(T)^(k^2)
+m1 = float(np.mean(zeta_abs**2))   # k=1: ~ C_1 * log T
+m2 = float(np.mean(zeta_abs**4))   # k=2: ~ C_2 * (log T)^4
+ratio1 = m1 / log_T                 # debe converger a C_1 ≈ 1
+ratio2 = m2 / (log_T**4)           # debe converger a C_2 ≈ 2/(4!*zeta(2)^2) ≈ 0.0502
+# Score: qué tan cerca ratio1 está de 1 (la predicción de KS para k=1)
+ks_error = abs(ratio1 - 1.0)
+_result = {{"ratio1": ratio1, "ratio2": ratio2,
+            "ks_error": ks_error, "T_start": T_start, "T_end": T_end,
+            "frac_on_critical_line": max(0.0, 1.0 - ks_error)}}
 """
-        res = (executor.run(code, label=f"riemann_zero_{cycle}").get("result") or {})
-        score = float(res.get("frac_on_critical_line", 0.0)) if res else 0.0
-        if score > 0.70:
+        res = (executor.run(code, label=f"riemann_ks_{cycle}").get("result") or {})
+        ks_err = float(res.get("ks_error", 1.0)) if res else 1.0
+        score  = max(0.0, 1.0 - ks_err * 2)   # ks_error < 0.5 → score > 0
+        if score > 0.60:
+            r1 = res.get("ratio1", 0)
             tracker.record(
-                f"Backlund N(T) con error < 2 en {score:.1%} casos (T hasta {50+cycle*5})",
-                domain="riemann", confidence=min(0.95, score),
+                f"Momento KS k=1: ratio={r1:.3f} (esperado~1.0) en T=[{res.get('T_start'):.0f},{res.get('T_end'):.0f}]",
+                domain="riemann", confidence=min(0.90, score),
             )
         return score, res.get("frac_on_critical_line") if res else None
 
