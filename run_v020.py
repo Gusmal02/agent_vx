@@ -678,15 +678,18 @@ class DisruptorAgent:
                 f"  [{i+1}] {action}  score={h.get('score_mean',0):.3f}"
                 for i, (action, h) in enumerate(robust_findings.items())
             )
-            # Atacar solo el hallazgo más fuerte para evitar truncación JSON
-            top = list(robust_findings.items())[0]
-            findings_text = f"  {top[0]}  score={top[1].get('score_mean',0):.3f}"
-            prompt = f"""Eres un agente crítico. Este hallazgo fue validado por múltiples agentes ({self.problem}):
+            # Atacar TODOS los targets (ya filtrados por winding≠0)
+            findings_list = list(robust_findings.items())
+            findings_text = "\n".join(
+                f"  [{i+1}] {a}  score={d.get('score_mean',0):.3f}  winding={d.get('winding','?')}"
+                for i, (a, d) in enumerate(findings_list)
+            )
+            prompt = f"""Eres un agente crítico. Estos hallazgos tienen winding≠0 en su región del plano crítico ({self.problem}):
 {findings_text}
 
-Escribe UN experimento Python (solo numpy, <15 líneas) que intente FALSIFICARLO en un caso límite extremo.
-Responde SOLO en JSON sin texto extra:
-{{"attacks": [{{"target": "{top[0]}", "code": "import numpy as np\\nnp.random.seed(99)\\n# ataque extremo\\n_result = {{\\"breaks\\": False, \\"condition\\": \\"caso extremo\\", \\"score\\": 0.0}}", "expected_break": "cuándo debería fallar"}}]}}"""
+Escribe UN experimento Python por cada hallazgo (solo numpy/mpmath, <15 líneas cada uno) que intente FALSIFICARLO.
+Responde SOLO en JSON:
+{{"attacks": [{{"target": "nombre_accion", "code": "import numpy as np\\n_result = {{\\"breaks\\": False, \\"condition\\": \\"caso extremo\\", \\"score\\": 0.0}}", "expected_break": "cuándo debería fallar"}}]}}"""
 
             resp = client.messages.create(
                 model="claude-sonnet-4-6", max_tokens=2000,
