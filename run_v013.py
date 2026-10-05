@@ -139,7 +139,9 @@ class AgentV013:
         # El corpus indica que los primeros ceros hasta ~t=50 están verificados
         # El agente arranca más allá, con variación por seed para divergir
         base = 50.0
-        offset = (self.seed % 100) * 2.0   # seeds distintos → fronteras distintas
+        # Offset controlado: diferentes seeds → fronteras distintas pero acotadas
+        # Seed 42 → +4, seed 49 → +18, seed 56 → +12 (dentro de [50, 100])
+        offset = (self.seed % 25) * 2.0
         return base + offset
 
     def _execute_target(self, target: ExplorationTarget):

@@ -106,9 +106,10 @@ class MathExplorer:
                 t += 5
 
         # Buscar en rangos más allá de la frontera actual
-        # Rango candidato: frontier + 50 hasta frontier + 500
-        lo = frontier + 50
-        hi = frontier + 500
+        # Rango candidato: frontier + 10 hasta frontier + 100
+        # (mantener t < 300 para que findroot sea rápido)
+        lo = frontier + 10
+        hi = min(frontier + 100, 300.0)
         candidates = []
         t = lo
         while t < hi:
